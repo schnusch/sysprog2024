@@ -1,0 +1,11 @@
+tui enable
+tui layout asm
+tui layout reg
+
+break verify_password
+break *(verify_password+33)
+
+run < password.txt
+print/s "return address: $ebp[1]"
+print/a ((void **)$ebp)[1]
+# set ((void **)$ebp)[1] = -1
