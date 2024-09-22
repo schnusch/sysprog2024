@@ -103,6 +103,13 @@ struct pipeline *parse_pipeline(const char *line, const char **error) {
 		} else if(len == 1 && *word == '&') {
 			p->background = 1;
 		} else if(len == 1 && *word == '|') {
+			if(!command) {
+				free_pipeline(p);
+				if(error) {
+					*error = "missing command before |";
+				}
+				return NULL;
+			}
 			// add finished command
 			if(add_command(&p->commands, command) < 0) {
 				free(command);
@@ -135,7 +142,13 @@ struct pipeline *parse_pipeline(const char *line, const char **error) {
 		return NULL;
 	}
 
-	// TODO assert command
+	if(!command && p->commands) {
+		free_pipeline(p);
+		if(error) {
+			*error = "missing command after |";
+		}
+		return NULL;
+	}
 	// append current command
 	if(add_command(&p->commands, command) < 0) {
 		free(command);
