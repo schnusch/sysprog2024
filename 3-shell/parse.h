@@ -1,3 +1,6 @@
+#ifndef PARSE_H
+#define PARSE_H
+
 #include <stddef.h>
 
 typedef char** argument_list;
@@ -15,3 +18,5 @@ struct pipeline *parse_pipeline(const char *line, const char **error);
 void free_pipeline(struct pipeline *);
 
 void print_pipeline(const struct pipeline *);
+
+#endif
