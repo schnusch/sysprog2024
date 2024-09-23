@@ -85,6 +85,10 @@ int main(int argc, char **argv) {
 		}
 	}
 	if(optind < argc) {
+		_Static_assert(
+			EXIT_FAILURE != 2,
+			"exit code 2 is used for wrong command line usage, but the general error EXIT_FAILURE is equal to 2"
+		);
 	usage:
 		fprintf(stderr, "Usage: %s [-v]\n", argv[0]);
 		return 2;
@@ -98,7 +102,7 @@ int main(int argc, char **argv) {
 			if(prepare_prompt(&prompt, last_error) < 0) {
 				perror(argv[0]);
 				free(prompt);
-				return 1;
+				return EXIT_FAILURE;
 			}
 		}
 		char *line = readline(prompt);
@@ -125,7 +129,7 @@ int main(int argc, char **argv) {
 				perror(argv[0]);
 				free(line);
 				free(prompt);
-				return 1;
+				return EXIT_FAILURE;
 			}
 		}
 		if(verbose) {
@@ -136,5 +140,5 @@ int main(int argc, char **argv) {
 	}
 
 	free(prompt);
-	return 0;
+	return EXIT_SUCCESS;
 }
