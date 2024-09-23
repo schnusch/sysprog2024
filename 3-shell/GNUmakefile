@@ -9,6 +9,8 @@ cflags = -std=c99 -O2 -g -Wall -Wextra -Wpedantic -Wvla $(CFLAGS)
 ldflags = $(LDFLAGS)
 
 source_files = \
+	exec.c \
+	exec.h \
 	main.c \
 	parse.c \
 	parse.h
