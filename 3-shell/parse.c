@@ -175,34 +175,34 @@ void free_pipeline(struct pipeline *p) {
 }
 
 #define FMT_QUOTED_STRING "%s%s%s"
-#define ARG_QUOTED_STRING(s) (s ? "\"" : ""), s, (s ? "\"" : "")
+#define ARG_QUOTED_STRING(s) (s ? "\"" : ""), s ? s : "NULL", (s ? "\"" : "")
 
 void print_pipeline(const struct pipeline *p) {
-	printf("{\n");
-	printf("\t.stdin = "FMT_QUOTED_STRING",\n", ARG_QUOTED_STRING(p->stdin));
-	printf("\t.stdin = "FMT_QUOTED_STRING",\n", ARG_QUOTED_STRING(p->stdout));
-	printf("\t.background = %d,\n", p->background);
-	printf("\t.commands = ");
+	fprintf(stderr, "{\n");
+	fprintf(stderr, "\t.stdin = "FMT_QUOTED_STRING",\n", ARG_QUOTED_STRING(p->stdin));
+	fprintf(stderr, "\t.stdin = "FMT_QUOTED_STRING",\n", ARG_QUOTED_STRING(p->stdout));
+	fprintf(stderr, "\t.background = %d,\n", p->background);
+	fprintf(stderr, "\t.commands = ");
 	if(p->commands) {
-		printf("{\n");
+		fprintf(stderr, "{\n");
 		argument_list *cmd = p->commands;
 		do {
 			if(*cmd) {
-				printf("\t\t{");
+				fprintf(stderr, "\t\t{");
 				for(char **arg = *cmd; *arg; ++arg) {
 					if(arg != *cmd) {
-						printf(", ");
+						fprintf(stderr, ", ");
 					}
-					printf(FMT_QUOTED_STRING, ARG_QUOTED_STRING(*arg));
+					fprintf(stderr, FMT_QUOTED_STRING, ARG_QUOTED_STRING(*arg));
 				}
-				printf("},\n");
+				fprintf(stderr, "},\n");
 			} else {
-				printf("\t\tNULL,\n");
+				fprintf(stderr, "\t\tNULL,\n");
 			}
 		} while(*cmd++);
-		printf("\t},\n");
+		fprintf(stderr, "\t},\n");
 	} else {
-		printf("%p,\n", NULL);
+		fprintf(stderr, "%p,\n", NULL);
 	}
-	printf("}\n");
+	fprintf(stderr, "}");
 }
