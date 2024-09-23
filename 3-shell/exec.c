@@ -13,6 +13,95 @@
 
 #include "exec.h"
 
+#ifdef TRACE_FILE_DESCRIPTORS
+ #include <dirent.h>
+ #include <sys/file.h>
+
+static char *alloc_readlinkat(int dirfd, const char *pathname) {
+	char *buf = NULL;
+	size_t size = 256 / 2;
+	ssize_t n = 0;
+	do {
+		size *= 2;
+		char *tmp = realloc(buf, size);
+		if(!tmp) {
+			free(buf);
+			return NULL;
+		}
+		buf = tmp;
+
+		n = readlinkat(dirfd, pathname, buf, size);
+		if(n < 0) {
+			free(buf);
+			return NULL;
+		}
+	} while((size_t)n == size);
+	buf[n] = '\0';
+	return buf;
+}
+
+static void print_open_file_descriptors_no_errno(void) {
+	int errbak = errno;
+
+	int dir_fd = open("/proc/self/fd", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	if(dir_fd < 0) {
+		errno = errbak;
+		return;
+	}
+	int duped_dir_fd = dup(dir_fd);
+	if(duped_dir_fd < 0) {
+		goto cleanup;
+	}
+	DIR *d = fdopendir(duped_dir_fd);
+	if(!d) {
+		close(duped_dir_fd);
+		goto cleanup;
+	}
+	while(1) {
+		errno = 0;
+		struct dirent *e = readdir(d);
+		if(!e) {
+			// TODO errno
+			break;
+		}
+		if(
+			e->d_name[0] == '.'
+			&& (
+				e->d_name[1] == '\0'
+				|| (e->d_name[1] == '.' && e->d_name[2] == '\0')
+			)
+		) {
+			continue;
+		}
+
+		const char *str_flags = "";
+
+		char *end;
+		errno = 0;
+		long fd = strtol(e->d_name, &end, 10);
+		if(fd >= 0 && (fd != LONG_MAX || errno != ERANGE)) {
+			int flags = fcntl((int)fd, F_GETFD);
+			if(flags >= 0 && flags & FD_CLOEXEC) {
+				str_flags = " (O_CLOEXEC)";
+			}
+		}
+
+		dprintf(STDERR_FILENO, "/proc/self/fd/%s", e->d_name);
+		char *target = alloc_readlinkat(dir_fd, e->d_name);
+		if(target) {
+			dprintf(STDERR_FILENO, " => %s", target);
+			free(target);
+		}
+		dprintf(STDERR_FILENO, "%s\n", str_flags);
+	}
+	closedir(d);
+cleanup:
+	close(dir_fd);
+
+	errno = errbak;
+}
+#endif
+
 enum error_cause {
 	ERROR_CLOSE,
 	ERROR_DUP,
