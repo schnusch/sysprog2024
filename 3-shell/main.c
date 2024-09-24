@@ -9,6 +9,7 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 
+#include "exec.h"
 #include "parse.h"
 
 char *my_getcwd(void) {
@@ -136,7 +137,23 @@ int main(int argc, char **argv) {
 			}
 		}
 		if(verbose) {
+			fprintf(stderr, "calling: run_pipeline(");
 			print_pipeline(p);
+			fprintf(stderr, ")\n");
+		}
+		int ret = run_pipeline(p, verbose);
+		if(verbose) {
+			int errbak = errno;
+			fprintf(stderr, "finished: run_pipeline(");
+			print_pipeline(p);
+			fprintf(stderr, ") = %d\n", ret);
+			errno = errbak;
+		}
+		if(ret < 0) {
+			fprintf(stderr, "%s: cannot run command pipeline: %s: ", argv[0], line);
+			perror(NULL);
+			free_pipeline(p);
+			continue;
 		}
 		free_pipeline(p);
 		free(line);

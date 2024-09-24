@@ -167,6 +167,14 @@ static inline int closep_no_std(int *fd) {
 }
 
 /**
+ *  Used as `__attribute__((cleanup(closep_no_std_no_errno)))`.
+ */
+static inline void closep_no_std_no_errno(int *fd) {
+	BACKUP_ERRNO();
+	(void)!closep_no_std(fd);
+}
+
+/**
  *  Packet written to the pipe of `write_error_pipe_no_errno` to communicate
  *  errors to the parent process.
  *  If it's size is at most `PIPE_BUF` bytes is read/write is guaranteed to be
@@ -353,8 +361,109 @@ static void print_command(argument_list cmd, struct file_descriptors fds, int pi
 	);
 }
 
+/**
+ *   1. TODO create a new process group
+ *   2. open initial stdin/final stdout
+ *   3. create required pioes
+ *   4. start commands with their pipes
+ **/
 static int run_process_group(const struct pipeline *p, int error_fd, int verbose) {
-	return -1;
+	// TODO create process group
+
+	__attribute__((cleanup(closep_no_std_no_errno)))
+	int current_stdin = STDIN_FILENO;
+	if(p->stdin) {
+		current_stdin = open(p->stdin, O_RDONLY);
+		if(current_stdin < 0) {
+			write_error_pipe_no_errno(error_fd, errno, ERROR_OPEN);
+			return -1;
+		}
+	}
+
+	__attribute__((cleanup(closep_no_std_no_errno)))
+	int final_stdout = STDOUT_FILENO;
+	if(p->stdout) {
+		final_stdout = open(p->stdout, O_CREAT | O_WRONLY | O_TRUNC, 0666);
+		if(final_stdout < 0) {
+			write_error_pipe_no_errno(error_fd, errno, ERROR_OPEN);
+			return -1;
+		}
+	}
+
+	for(argument_list *cmd = p->commands; *cmd; ++cmd) {
+		int fds[2] = {-1, final_stdout};
+		if(cmd[1]) {
+			// There is a command following after this one, so we create pipe
+			// from this command to the next.
+			if(pipe(fds) < 0) {
+				write_error_pipe_no_errno(error_fd, errno, ERROR_PIPE);
+				return -1;
+			}
+		}
+
+		// After creating the pipe the following file descriptors exist:
+		// `current_stdin` is the current command's stdin
+		// `final_stdout` is the final command's stdout
+		// `fds[0]` is the next command's stdin
+		// `fds[1]` is the current command's stdout
+
+		pid_t child = start_command(cmd[0], (struct file_descriptors){
+			.stdin = current_stdin,
+			.stdout = fds[1],
+			// Close read end of pipe (it is meant for the next command) and
+			// the final command's stdout.
+			// `fds[0]` must come last, because it is -1 for the last
+			// command (`cmd[1]` == NULL).
+			.close = (int[]){final_stdout, fds[0], -1},
+		});
+		if(child < 0) {
+			write_error_pipe_no_errno(error_fd, errno, ERROR_FORK);
+			BACKUP_ERRNO();
+			(void)!closep_no_std(&fds[0]);
+			(void)!closep_no_std(&fds[1]);
+			return -1;
+		}
+
+		if(verbose) {
+			print_command(cmd[0], (struct file_descriptors){
+				.stdin = current_stdin,
+				.stdout = fds[1],
+			}, fds[0]);
+		}
+
+		// Close the write end of the pipe, so it is exclusively used as the
+		// child's stdout.
+		if(closep_no_std(&fds[1])) {
+			write_error_pipe_no_errno(error_fd, errno, ERROR_CLOSE);
+			BACKUP_ERRNO();
+			(void)!closep_no_std(&fds[0]);
+			(void)!closep_no_std(&fds[1]);
+			kill_child_no_errno(child);
+			return -1;
+		}
+
+		// Another file-descriptor to the read end won't mess with EOF, so we
+		// can ignore the error.
+		(void)!closep_no_std(&current_stdin);
+		current_stdin = fds[0];
+	}
+
+	// close error_fd, starting processes was successful
+	if(close(error_fd) < 0) {
+		write_error_pipe_no_errno(error_fd, errno, ERROR_CLOSE);
+		return -1;
+	}
+
+#ifdef TRACE_FILE_DESCRIPTORS
+	flock(STDERR_FILENO, LOCK_EX);
+	dprintf(STDERR_FILENO, "complete pipeline started (%d).\n", getpid());
+	print_open_file_descriptors_no_errno();
+	flock(STDERR_FILENO, LOCK_UN);
+#endif
+
+	// TODO wait
+
+	return 0;
 }
 
 /**
