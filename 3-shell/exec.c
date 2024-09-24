@@ -131,6 +131,22 @@ cleanup:
 }
 #endif
 
+/**
+ *  Close the file descriptor and set it to -1.
+ */
+__attribute__((warn_unused_result))
+static inline int closep(int *fd) {
+	if(*fd < 0) {
+		return 0;
+	} else {
+		int ret = close(*fd);
+		if(ret == 0) {
+			*fd = -1;
+		}
+		return ret;
+	}
+}
+
 enum error_cause {
 	ERROR_CLOSE,
 	ERROR_DUP,
@@ -180,12 +196,14 @@ static pid_t fork_with_pipe(int error_fds[2]) {
 		return -1;
 	} else if(child == 0) {
 		// we actually do not need to close the read end, but we do anyway
-		(void)!close(error_fds[0]);
+		(void)!closep(&error_fds[0]);
 		error_fds[0] = -1;
 		return child;
 	} else {
 		// we must close the write end, so the only remaining write end belongs to the child process
-		if(close(error_fds[1]) < 0) {
+		if(closep(&error_fds[1]) < 0) {
+			BACKUP_ERRNO();
+			(void)!close(error_fds[0]);
 			kill_child_no_errno(child);
 			return -1;
 		}
