@@ -335,11 +335,13 @@ pid_t start_command(argument_list cmd, struct file_descriptors fds) {
 				// write end was closed, so exec was successful
 				(void)!close(error_fds[0]);
 				return child;
+			} else if(errno != EINTR) {
+				// redo `read` if interrupted by a signal
+				BACKUP_ERRNO();
+				(void)!close(error_fds[0]);
+				kill_child_no_errno(child);
+				return -1;
 			}
-			BACKUP_ERRNO();
-			(void)!close(error_fds[0]);
-			kill_child_no_errno(child);
-			return -1;
 		}
 	}
 }
@@ -494,11 +496,13 @@ int run_pipeline(const struct pipeline *p, int verbose) {
 				// write end was close
 				(void)!close(error_fds[0]);
 				break;
+			} else if(errno != EINTR) {
+				// redo `read` if interrupted by a signal
+				BACKUP_ERRNO();
+				(void)!close(error_fds[0]);
+				kill_child_no_errno(pgrp);
+				return -1;
 			}
-			BACKUP_ERRNO();
-			(void)!close(error_fds[0]);
-			kill_child_no_errno(pgrp);
-			return -1;
 		}
 
 		// TODO waitpid
