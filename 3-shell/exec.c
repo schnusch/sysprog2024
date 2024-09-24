@@ -155,6 +155,18 @@ static inline int closep(int *fd) {
 }
 
 /**
+ *  Helper that avoids accidentally closing the standard file descriptors.
+ */
+__attribute__((warn_unused_result))
+static inline int closep_no_std(int *fd) {
+	if(*fd == STDIN_FILENO || *fd == STDOUT_FILENO || *fd == STDERR_FILENO) {
+		return 0;
+	} else {
+		return closep(fd);
+	}
+}
+
+/**
  *  Packet written to the pipe of `write_error_pipe_no_errno` to communicate
  *  errors to the parent process.
  *  If it's size is at most `PIPE_BUF` bytes is read/write is guaranteed to be
@@ -230,6 +242,115 @@ static pid_t fork_with_pipe(int error_fds[2]) {
 		error_fds[1] = -1;
 		return child;
 	}
+}
+
+/**
+ * allow keyword arguments in `start_command`
+ */
+struct file_descriptors {
+	int stdin;
+	int stdout;
+	int *close;
+};
+
+/**
+ *   1. fork a child process
+ *   2. in the child process: `dup` `fds.stdin` to `STDIN_FILENO` and
+ *      `fds.stdout` to `STDOUT_FILENO`
+ *   3. in the child process: close `fds.stdin`, `fds.stdout`, and all file
+ *      descriptors in `fds.close` (`fds.close` must be terminated with `-1`).
+ *      Skip `STDIN_FILENO`, `STDOUT_FILENO`, and `STDERR_FILENO`.
+ *   4. in the child process: exec `cmd`
+ *   5. in the parent process: wait for successful `execvp` in the child (with
+ *      a `O_CLOEXEC` pipe) and return
+ */
+pid_t start_command(argument_list cmd, struct file_descriptors fds) {
+	int error_fds[2];
+	pid_t child = fork_with_pipe(error_fds);
+	if(child < 0) {
+		return -1;
+	} else if(child == 0) {
+#ifdef TRACE_FILE_DESCRIPTORS
+		flock(STDERR_FILENO, LOCK_EX);
+		dprintf(STDERR_FILENO, "start_command({");
+		for(char **arg = cmd; *arg; ++arg) {
+			dprintf(STDERR_FILENO, "\"%s\", ", *arg);
+		}
+		dprintf(STDERR_FILENO, "NULL}, { /* %d */\n", getpid());
+		dprintf(STDERR_FILENO, "\t.stdin = %d,\n", fds.stdin);
+		dprintf(STDERR_FILENO, "\t.stdout = %d,\n", fds.stdout);
+		dprintf(STDERR_FILENO, "\t.close = {");
+		for(int *fd = fds.close; *fd >= 0; ++fd) {
+			dprintf(STDERR_FILENO, "%d, ", *fd);
+		}
+		dprintf(STDERR_FILENO, "-1},\n");
+		dprintf(STDERR_FILENO, "})\n");
+		flock(STDERR_FILENO, LOCK_UN);
+#endif
+
+		// dup2 is a no-op if oldfd and newfd are equal
+		if(dup2(fds.stdin, STDIN_FILENO) < 0 || dup2(fds.stdout, STDOUT_FILENO) < 0) {
+			write_error_pipe_no_errno(error_fds[1], errno, ERROR_DUP);
+			_exit(EXIT_FAILURE);  // FIXME exit with 127/-1?
+		}
+
+		// close pipe fds, they were duped
+		(void)!closep_no_std(&fds.stdin);
+		(void)!closep_no_std(&fds.stdout);
+		// close extra file descriptors
+		for(int *fd = fds.close; *fd >= 0; ++fd) {
+			(void)!closep_no_std(fd);
+		}
+
+#ifdef TRACE_FILE_DESCRIPTORS
+		flock(STDERR_FILENO, LOCK_EX);
+		dprintf(
+			STDERR_FILENO,
+			"about to exec %s in %d:\n",
+			cmd[0],
+			getpid()
+		);
+		print_open_file_descriptors_no_errno();
+		flock(STDERR_FILENO, LOCK_UN);
+#endif
+
+		execvp(cmd[0], cmd);
+		write_error_pipe_no_errno(error_fds[1], errno, ERROR_EXEC);
+		_exit(EXIT_FAILURE);  // FIXME exit with 127/-1?
+	} else {
+		struct error_packet e;
+		while(1) {
+			ssize_t n = read(error_fds[0], &e, sizeof(e));
+			if(n > 0) {
+				errno = e.errnum;
+			} else if(n == 0) {
+				// write end was closed, so exec was successful
+				(void)!close(error_fds[0]);
+				return child;
+			}
+			BACKUP_ERRNO();
+			(void)!close(error_fds[0]);
+			kill_child_no_errno(child);
+			return -1;
+		}
+	}
+}
+
+static void print_command(argument_list cmd, struct file_descriptors fds, int pipe_r) {
+	BACKUP_ERRNO();
+
+	dprintf(STDERR_FILENO, "started $ ");
+	for(char **arg = cmd; *arg; ++arg) {
+		dprintf(STDERR_FILENO, "%s ", *arg);
+	}
+	dprintf(
+		STDERR_FILENO,
+		"<&%d >&%d (%d => %d)\n",
+		fds.stdin,
+		fds.stdout,
+		fds.stdout,
+		pipe_r
+	);
 }
 
 static int run_process_group(const struct pipeline *p, int error_fd, int verbose) {
