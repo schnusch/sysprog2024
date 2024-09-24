@@ -205,8 +205,7 @@ static inline void kill_child_no_errno(pid_t child) {
  *  parent, fork, and close all but the required file descritors.
  */
 static pid_t fork_with_pipe(int error_fds[2]) {
-	// O_DIRECT guarantees atomic read/write for n <= PIPE_BUF
-	if(pipe2(error_fds, O_CLOEXEC | O_DIRECT) < 0) {
+	if(pipe2(error_fds, O_CLOEXEC) < 0) {
 		return -1;
 	}
 	pid_t child = fork();
