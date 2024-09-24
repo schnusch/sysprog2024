@@ -155,6 +155,7 @@ enum error_cause {
 	ERROR_EXEC,
 	ERROR_FORK,
 	ERROR_OPEN,
+	ERROR_SETPGID,
 	ERROR_PIPE,
 	ERROR_WAIT,
 };
@@ -333,13 +334,27 @@ static void print_command(argument_list cmd, struct file_descriptors fds, int pi
 }
 
 /**
- *   1. TODO create a new process group
+ *   1. create a new process group for background processes
  *   2. open initial stdin/final stdout
  *   3. create required pioes
  *   4. start commands with their pipes
  **/
-static int run_process_group(const struct pipeline *p, int error_fd, int verbose) {
-	// TODO create process group
+static int run_piped_commands(const struct pipeline *p, int error_fd, int verbose) {
+	// TODO do not ignore SIGINT
+
+	// Background jobs/pipelines are in a different process group than the
+	// process controlling the terminal, see https://en.wikipedia.org/wiki/Background_process
+	// All but the the process group of the process controlling the terminal
+	// will receive SIGTTIN when attempting to read from the terminal.
+	// (The session ID belongs to the terminal, not the shell (see credentials(7))
+	// so we don't need setsid(2).)
+	if(p->background) {
+		// create a new process group for background pipelines
+		if(setpgid(getpid(), 0) < 0) {
+			write_error_pipe_no_errno(error_fd, errno, ERROR_SETPGID);
+			return -1;
+		}
+	}
 
 	__attribute__((cleanup(closep_no_std_no_errno)))
 	int current_stdin = STDIN_FILENO;
@@ -432,13 +447,17 @@ static int run_process_group(const struct pipeline *p, int error_fd, int verbose
 	flock(STDERR_FILENO, LOCK_UN);
 #endif
 
-	// TODO wait
+	// If the commands are to be run in the background we can just exit our
+	// pipeline's subprocess after all its commands where started.
+	if(!p->background) {
+		// TODO wait
+	}
 
 	return 0;
 }
 
 /**
- *  Execute the pipeline. (`run_process_grouo` actually does everything.)
+ *  Execute the pipeline. (`run_piped_commands` actually does everything.)
  */
 int run_pipeline(const struct pipeline *p, int verbose) {
 	int error_fds[2];
@@ -448,7 +467,7 @@ int run_pipeline(const struct pipeline *p, int verbose) {
 	} else if(pgrp == 0) {
 		// child process
 		_exit(
-			run_process_group(p, error_fds[1], verbose) < 0
+			run_piped_commands(p, error_fds[1], verbose) < 0
 			? EXIT_FAILURE
 			: EXIT_SUCCESS
 		);
