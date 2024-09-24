@@ -49,6 +49,9 @@ static inline void restore_errno(int *errnum) {
  #include <dirent.h>
  #include <sys/file.h>
 
+/**
+ *  `readlinkat(2)` with allocation and terminating null-byte.
+ */
 static char *alloc_readlinkat(int dirfd, const char *pathname) {
 	char *buf = NULL;
 	size_t size = 256 / 2;
@@ -72,6 +75,10 @@ static char *alloc_readlinkat(int dirfd, const char *pathname) {
 	return buf;
 }
 
+/**
+ *  Iterate and print the contents of `/proc/self/fd` and the file descriptor's
+ *  `O_CLOEXEC` flag.
+ */
 static void print_open_file_descriptors_no_errno(void) {
 	BACKUP_ERRNO();
 
@@ -147,6 +154,12 @@ static inline int closep(int *fd) {
 	}
 }
 
+/**
+ *  Packet written to the pipe of `write_error_pipe_no_errno` to communicate
+ *  errors to the parent process.
+ *  If it's size is at most `PIPE_BUF` bytes is read/write is guaranteed to be
+ *  atomic, see `pipe(7)`.
+ */
 enum error_cause {
 	ERROR_CLOSE,
 	ERROR_DUP,
@@ -170,6 +183,7 @@ static inline void write_error_pipe_no_errno(int error_fd, int errnum, enum erro
 	struct error_packet e;
 	e.cause = cause;
 	e.errnum = errnum;
+	// writes of up to `PIPE_BUF` bytes are atomic
 	(void)!write(error_fd, &e, sizeof(e));
 }
 
@@ -186,6 +200,10 @@ static inline void kill_child_no_errno(pid_t child) {
 	}
 }
 
+/**
+ *  Create a pipe (with `O_CLOEXEC`) to atomically communicate from child to
+ *  parent, fork, and close all but the required file descritors.
+ */
 static pid_t fork_with_pipe(int error_fds[2]) {
 	// O_DIRECT guarantees atomic read/write for n <= PIPE_BUF
 	if(pipe2(error_fds, O_CLOEXEC | O_DIRECT) < 0) {
@@ -195,12 +213,15 @@ static pid_t fork_with_pipe(int error_fds[2]) {
 	if(child < 0) {
 		return -1;
 	} else if(child == 0) {
-		// we actually do not need to close the read end, but we do anyway
+		// We can ignore errors when closing the read end in the child process
+		// because it will not interfere with the communication.
 		(void)!closep(&error_fds[0]);
 		error_fds[0] = -1;
 		return child;
 	} else {
-		// we must close the write end, so the only remaining write end belongs to the child process
+		// The write end must be closed in the parent process, so the only
+		// remainig write end is in the child process and its close in the child
+		// process (e.g. implicitly by exec) will result in EOF on the read end.
 		if(closep(&error_fds[1]) < 0) {
 			BACKUP_ERRNO();
 			(void)!close(error_fds[0]);
@@ -216,6 +237,9 @@ static int run_process_group(const struct pipeline *p, int error_fd, int verbose
 	return -1;
 }
 
+/**
+ *  Execute the pipeline. (`run_process_grouo` actually does everything.)
+ */
 int run_pipeline(const struct pipeline *p, int verbose) {
 	int error_fds[2];
 	pid_t pgrp = fork_with_pipe(error_fds);
@@ -234,6 +258,8 @@ int run_pipeline(const struct pipeline *p, int verbose) {
 		while(1) {
 			ssize_t n = read(error_fds[0], &e, sizeof(e));
 			if(n > 0) {
+				// Reads of at most `PIPE_BUF` bytes are atomic, so if `n > 0`
+				// then `n >= sizeof(e)`.
 				errno = e.errnum;
 			} else if(n == 0) {
 				// write end was close
