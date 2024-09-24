@@ -299,7 +299,7 @@ pid_t start_command(argument_list cmd, struct file_descriptors fds) {
 		// dup2 is a no-op if oldfd and newfd are equal
 		if(dup2(fds.stdin, STDIN_FILENO) < 0 || dup2(fds.stdout, STDOUT_FILENO) < 0) {
 			write_error_pipe_no_errno(error_fds[1], errno, ERROR_DUP);
-			_exit(EXIT_FAILURE);  // FIXME exit with 127/-1?
+			_exit(127);  // bash uses 126 or 127 after failed execve
 		}
 
 		// close pipe fds, they were duped
@@ -324,7 +324,7 @@ pid_t start_command(argument_list cmd, struct file_descriptors fds) {
 
 		execvp(cmd[0], cmd);
 		write_error_pipe_no_errno(error_fds[1], errno, ERROR_EXEC);
-		_exit(EXIT_FAILURE);  // FIXME exit with 127/-1?
+		_exit(127);  // bash uses 126 or 127 after failed execve
 	} else {
 		struct error_packet e;
 		while(1) {
