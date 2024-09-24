@@ -9,6 +9,7 @@ cflags = -std=c99 -O2 -g -Wall -Wextra -Wpedantic -Wvla $(CFLAGS)
 ldflags = $(LDFLAGS)
 
 source_files = \
+	backup-errno.h \
 	exec.c \
 	exec.h \
 	main.c \

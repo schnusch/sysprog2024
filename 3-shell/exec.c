@@ -11,39 +11,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "backup-errno.h"
 #include "exec.h"
-
-/**
- *  Define helpers to backup and restore `errno`. `errno` is backed up, by
- *  assigning `errno` to a variable. `errno` is restored once that variable
- *  goes out of scope by using GCC's `__attribute__((cleanup(...)))` (If
- *  projects like systemd get away with using it, we should in this lab as
- *  well.).
- */
-#ifdef TRACE_ERRNO_BACKUP
-// tracing version that also prints when/where errno is backed up/restored
-struct errno_backup {
-	int errnum;
-	size_t line;
-};
-static inline int backup_errno(size_t lineno) {
-	int errnum = errno;
-	dprintf(STDERR_FILENO, "backing up errno at line %zu: %d\n", lineno, errno);
-	errno = errnum;
-	return errno;
-}
-static inline void restore_errno(struct errno_backup *backup) {
-	dprintf(STDERR_FILENO, "restoring errno from line %zu: %d\n", backup->line, backup->errnum);
-	errno = backup->errnum;
-}
- #define BACKUP_ERRNO() struct errno_backup errno_backup_##__LINE__ __attribute__((cleanup(restore_errno))) = { .errnum = backup_errno(__LINE__), .line = __LINE__ }
-#else
-// silent version
-static inline void restore_errno(int *errnum) {
-	errno = *errnum;
-}
- #define BACKUP_ERRNO() int errno_backup_##__LINE__ __attribute__((cleanup(restore_errno))) = errno
-#endif
 
 #ifdef TRACE_FILE_DESCRIPTORS
  #include <dirent.h>
