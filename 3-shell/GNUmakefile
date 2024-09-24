@@ -1,6 +1,6 @@
 CC = gcc
 PKGCONF = pkgconf
-CPPFLAGS =
+CPPFLAGS = -DTRACE_ERRNO_BACKUP
 CFLAGS = $(shell $(PKGCONF) --cflags readline)
 LDFLAGS = $(shell $(PKGCONF) --libs readline)
 

@@ -13,6 +13,38 @@
 
 #include "exec.h"
 
+/**
+ *  Define helpers to backup and restore `errno`. `errno` is backed up, by
+ *  assigning `errno` to a variable. `errno` is restored once that variable
+ *  goes out of scope by using GCC's `__attribute__((cleanup(...)))` (If
+ *  projects like systemd get away with using it, we should in this lab as
+ *  well.).
+ */
+#ifdef TRACE_ERRNO_BACKUP
+// tracing version that also prints when/where errno is backed up/restored
+struct errno_backup {
+	int errnum;
+	size_t line;
+};
+static inline int backup_errno(size_t lineno) {
+	int errnum = errno;
+	dprintf(STDERR_FILENO, "backing up errno at line %zu: %d\n", lineno, errno);
+	errno = errnum;
+	return errno;
+}
+static inline void restore_errno(struct errno_backup *backup) {
+	dprintf(STDERR_FILENO, "restoring errno from line %zu: %d\n", backup->line, backup->errnum);
+	errno = backup->errnum;
+}
+ #define BACKUP_ERRNO() struct errno_backup errno_backup_##__LINE__ __attribute__((cleanup(restore_errno))) = { .errnum = backup_errno(__LINE__), .line = __LINE__ }
+#else
+// silent version
+static inline void restore_errno(int *errnum) {
+	errno = *errnum;
+}
+ #define BACKUP_ERRNO() int errno_backup_##__LINE__ __attribute__((cleanup(restore_errno))) = errno
+#endif
+
 #ifdef TRACE_FILE_DESCRIPTORS
  #include <dirent.h>
  #include <sys/file.h>
@@ -41,11 +73,10 @@ static char *alloc_readlinkat(int dirfd, const char *pathname) {
 }
 
 static void print_open_file_descriptors_no_errno(void) {
-	int errbak = errno;
+	BACKUP_ERRNO();
 
 	int dir_fd = open("/proc/self/fd", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if(dir_fd < 0) {
-		errno = errbak;
 		return;
 	}
 	int duped_dir_fd = dup(dir_fd);
@@ -97,8 +128,6 @@ static void print_open_file_descriptors_no_errno(void) {
 	closedir(d);
 cleanup:
 	close(dir_fd);
-
-	errno = errbak;
 }
 #endif
 
@@ -121,16 +150,15 @@ _Static_assert(
 );
 
 static inline void write_error_pipe_no_errno(int error_fd, int errnum, enum error_cause cause) {
-	int errbak = errno;
+	BACKUP_ERRNO();
 	struct error_packet e;
 	e.cause = cause;
 	e.errnum = errnum;
 	(void)!write(error_fd, &e, sizeof(e));
-	errno = errbak;
 }
 
 static inline void kill_child_no_errno(pid_t child) {
-	int errbak = errno;
+	BACKUP_ERRNO();
 	// kill and reap child process
 	if(kill(child, SIGKILL) == 0) {
 		int status;
@@ -140,7 +168,6 @@ static inline void kill_child_no_errno(pid_t child) {
 			&& !WIFSIGNALED(status)
 		) { }
 	}
-	errno = errbak;
 }
 
 static pid_t fork_with_pipe(int error_fds[2]) {
@@ -195,9 +222,8 @@ int run_pipeline(const struct pipeline *p, int verbose) {
 				(void)!close(error_fds[0]);
 				break;
 			}
-			int errbak = errno;
+			BACKUP_ERRNO();
 			(void)!close(error_fds[0]);
-			errno = errbak;
 			kill_child_no_errno(pgrp);
 			return -1;
 		}
