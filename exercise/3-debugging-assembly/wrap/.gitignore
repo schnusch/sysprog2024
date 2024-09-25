@@ -1,0 +1,4 @@
+/leak
+/leak.o
+/mallocWrap.o
+/mallocWrap.so
