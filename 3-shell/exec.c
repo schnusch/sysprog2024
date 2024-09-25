@@ -150,21 +150,9 @@ static inline void closep_no_std_no_errno(int *fd) {
  *  If it's size is at most `PIPE_BUF` bytes is read/write is guaranteed to be
  *  atomic, see `pipe(7)`.
  */
-enum error_cause {
-	ERROR_CLOSE,
-	ERROR_DUP,
-	ERROR_EXEC,
-	ERROR_FORK,
-	ERROR_OPEN,
-	ERROR_SETPGID,
-	ERROR_PIPE,
-	ERROR_WAIT,
-	// misuse error cause for child process exit
-	EXIT_NO_ERROR,
-};
 struct error_packet {
 	int errnum;
-	enum error_cause cause;
+	enum pipeline_error cause;
 };
 _Static_assert(
 	sizeof(struct error_packet) <= PIPE_BUF,
@@ -299,11 +287,14 @@ pid_t start_command(argument_list cmd, struct file_descriptors fds) {
 		write_error_pipe_no_errno(error_fds[1], errno, ERROR_EXEC);
 		_exit(127);  // bash uses 126 or 127 after failed execve
 	} else {
+		// We do not have to close `error_fds[0]` because we will exit, when we
+		// return.
 		struct error_packet e;
 		while(1) {
 			ssize_t n = read(error_fds[0], &e, sizeof(e));
 			if(n > 0) {
 				errno = e.errnum;
+				return -1;
 			} else if(n == 0) {
 				// write end was closed, so exec was successful
 				(void)!close(error_fds[0]);
@@ -337,25 +328,56 @@ static void print_command(argument_list cmd, struct file_descriptors fds, int pi
 }
 
 /**
+ *  TODO
+ */
+static int signal_pipe = -1;
+
+/**
+ *  Create a non-blocking pipe. The write end is stored in `signal_pipe` and
+ *  can be used in signal handlers to communicate the received signals. The
+ *  read end is returned.
+ */
+static int create_signal_pipe(void) {
+	if(signal_pipe >= 0) {
+		// TODO think about errno
+		errno = EINVAL;
+		return -1;
+	}
+	int fds[2];
+	if(pipe2(fds, O_CLOEXEC | O_NONBLOCK) < 0) {
+		return -1;
+	}
+	signal_pipe = fds[1];
+	return fds[0];
+}
+
+/**
+ *  Close the the global write end of the signal pipe `signal_pipe`.
+ */
+static int close_signal_pipe(void) {
+	int ret = close(signal_pipe);
+	if(ret >= 0) {
+		signal_pipe = -1;
+	}
+	return ret;
+}
+
+/**
+ *  Write the received signal to `signal_pipe`. All errors are ignored.
+ */
+static int signal_handler(int signum) {
+	BACKUP_ERRNO();
+	(void)!write(signal_pipe, &signum, sizeof(signum));
+}
+
+/**
+ *   0. TODO signal handling
  *   1. create a new process group
  *   2. open initial stdin/final stdout
  *   3. create required pioes
  *   4. start commands with their pipes
  **/
 static int run_piped_commands(const struct pipeline *p, int error_fd, int verbose) {
-	sigset_t sigmask;
-	sigfillset(&sigmask);
-	__attribute__((cleanup(closep_no_std_no_errno)))
-	int signal_fd = signalfd(-1, &sigmask, 0);
-	if(signal_fd < 0) {
-		write_error_pipe_no_errno(error_fd, errno, ERROR_SIGNALFD);
-		return -1;
-	}
-	if(sigprocmask(SIG_SETMASK, &sigmask, NULL) < 0) {
-		write_error_pipe_no_errno(error_fd, errno, ERROR_SIGPROCMASK);
-		return -1;
-	}
-
 	// The following hierarchy exists:
 	// session > controllin0g termjnal > process group
 	//
@@ -378,14 +400,14 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 	// see credentials(7), setsid(2)
 	if(setpgid(getpid(), 0) < 0) {
 		write_error_pipe_no_errno(error_fd, errno, ERROR_SETPGID);
-		return -1;
+		return EXIT_FAILURE;
 	}
 	if(!p->background) {
 		// set current pipeline's process group to foreground
 		// TODO STDIN_FILENO vs STDERR_FILENO, bash seems to use STDERR_FILENO
 		if(tcsetpgrp(STDIN_FILENO, 0) < 0 && errno != ENOTTY) {
 			write_error_pipe_no_errno(error_fd, errno, ERROR_TCSETPGRP);
-			return -1;
+			return EXIT_FAILURE;
 		}
 	}
 
@@ -402,7 +424,20 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 		child_pids[i] = -1;
 	}
 
-	// TODO signal handlers
+	// initialize signal handling
+	int signal_fd = create_signal_pipe();
+	if(signal_fd < 0) {
+		write_error_pipe_no_errno(error_fd, errno, ERROR_PIPE);
+		return -1;
+	}
+	struct sigaction sigact = {
+		.sa_handler = signal_handler,
+	};
+	if(sigaction(SIGINT, &sigact, NULL) < 0) {
+		write_error_pipe_no_errno(error_fd, errno, ERROR_SIGACTION);
+		return -1;
+	}
+	// TODO more signal handlers
 
 	__attribute__((cleanup(closep_no_std_no_errno)))
 	int current_stdin = STDIN_FILENO;
@@ -410,7 +445,7 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 		current_stdin = open(p->stdin, O_RDONLY);
 		if(current_stdin < 0) {
 			write_error_pipe_no_errno(error_fd, errno, ERROR_OPEN);
-			return -1;
+			return EXIT_FAILURE;
 		}
 	}
 
@@ -420,7 +455,7 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 		final_stdout = open(p->stdout, O_CREAT | O_WRONLY | O_TRUNC, 0666);
 		if(final_stdout < 0) {
 			write_error_pipe_no_errno(error_fd, errno, ERROR_OPEN);
-			return -1;
+			return EXIT_FAILURE;
 		}
 	}
 
@@ -432,7 +467,7 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 			// from this command to the next.
 			if(pipe(fds) < 0) {
 				write_error_pipe_no_errno(error_fd, errno, ERROR_PIPE);
-				return -1;
+				return EXIT_FAILURE;
 			}
 		}
 
@@ -456,7 +491,7 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 			BACKUP_ERRNO();
 			(void)!closep_no_std(&fds[0]);
 			(void)!closep_no_std(&fds[1]);
-			return -1;
+			return EXIT_FAILURE;
 		}
 
 		if(verbose) {
@@ -474,7 +509,7 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 			(void)!closep_no_std(&fds[0]);
 			(void)!closep_no_std(&fds[1]);
 			kill_child_no_errno(child);
-			return -1;
+			return EXIT_FAILURE;
 		}
 
 		*child_pid_ptr++ = child;
@@ -497,7 +532,7 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 	// close error_fd, starting processes was successful
 	if(close(error_fd) < 0) {
 		write_error_pipe_no_errno(error_fd, errno, ERROR_CLOSE);
-		return -1;
+		return EXIT_FAILURE;
 	}
 
 #ifdef TRACE_FILE_DESCRIPTORS
@@ -510,21 +545,26 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 	// pipeline's subprocess after all its commands where started.
 	if(!p->background) {
 		while(1) {
-			// TODO think about waitpid(0, ...)
-			// Do we care if child processes changed their process group?
+			// `waitpid(0, ...)` waits for any child process in our process
+			// group. We could use `waitpid(-1, ...)` to also wait for child
+			// processes that changed their process group, but they might have
+			// created their own session and so on, so we do not wait for them
+			// anymore.
 			// see https://man7.org/linux/man-pages/man2/wait.2.html#DESCRIPTION
 			int status;
-			pid_t pid = waitpid(-1, &status, 0);
+			pid_t pid = waitpid(0, &status, 0);
 			if(pid < 0) {
 				if(errno == ECHILD) {
 					// no more child processes running
 					break;
 				} else if(errno == EINTR) {
+					// redo waitpid
+					// TODO check for signals
 					continue;
 				} else {
 					// should not be returned by waitpid, but better safe than sorry
 					write_error_pipe_no_errno(error_fd, errno, ERROR_WAIT);
-					return -1;
+					return EXIT_FAILURE;
 				}
 			}
 			if(WIFEXITED(status) || WIFSIGNALED(status)) {
@@ -554,7 +594,8 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 		
 	}
 
-	return 0;
+	// TODO return exit code of last command
+	return EXIT_SUCCESS;
 }
 
 /**
@@ -568,13 +609,10 @@ int run_pipeline(const struct pipeline *p, int verbose) {
 		return -1;
 	} else if(pgrp == 0) {
 		// child process
-		_exit(
-			run_piped_commands(p, error_fds[1], verbose) < 0
-			? EXIT_FAILURE
-			: EXIT_SUCCESS
-		);
+		_exit(run_piped_commands(p, error_fds[1], verbose));
 	} else {
 		// parent process
+		int ret = 0;
 		struct error_packet e;
 		while(1) {
 			ssize_t n = read(error_fds[0], &e, sizeof(e));
@@ -586,6 +624,7 @@ int run_pipeline(const struct pipeline *p, int verbose) {
 				} else {
 !					kill_child_no_errno(pgrp);
 					errno = e.errnum;
+					ret = e.cause;
 				}
 				break;
 			} else if(n == 0) {
@@ -601,11 +640,15 @@ int run_pipeline(const struct pipeline *p, int verbose) {
 			}
 		}
 
+		// We cannot use BACKUP_ERRNO() because we might want to return our
+		// errno.
+		int errno_backup = errno;
+
 		int status;
 		do {
 			if(waitpid(pgrp, &status, 0) < 0) {
-				BACKUP_ERRNO();
 				kill(pgrp, SIGKILL);
+				errno = errno_backup;
 				return -1;
 			}
 		} while(!WIFEXITED(status) && !WIFSIGNALED(status));
@@ -613,7 +656,7 @@ int run_pipeline(const struct pipeline *p, int verbose) {
 		// set the shells process group to foreground
 		// TODO STDIN_FILENO vs STDERR_FILENO, bash seems to use STDERR_FILENO
 		if(tcsetpgrp(STDIN_FILENO, 0) < 0 && errno != ENOTTY) {
-			return -1;
+			return FATAL_TCSETPGRP;
 		}
 
 		return WEXITSTATUS(status);
