@@ -82,7 +82,7 @@ int main(int argc, char **argv) {
 	for(int opt; (opt = getopt(argc, argv, "v")) != -1;) {
 		switch(opt) {
 		case 'v':
-			verbose = 1;
+			++verbose;
 			break;
 		default:
 			goto usage;

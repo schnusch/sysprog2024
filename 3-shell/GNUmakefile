@@ -24,4 +24,4 @@ clean:
 	$(RM) trash
 
 trash: $(source_files)
-	$(CC) -o $@ $(cppflags) $(cflags) $(source_files) $(ldflags)
+	$(CC) $(cppflags) $(cflags) -o $@ $(source_files) $(ldflags)

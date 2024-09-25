@@ -1,5 +1,5 @@
 #ifndef _GNU_SOURCE
- #define _GNU_SOURCE
+ #define _GNU_SOURCE  // pipe2
 #endif
 #include <errno.h>
 #include <fcntl.h>
@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/signalfd.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -158,10 +159,12 @@ enum error_cause {
 	ERROR_SETPGID,
 	ERROR_PIPE,
 	ERROR_WAIT,
+	// misuse error cause for child process exit
+	EXIT_NO_ERROR,
 };
 struct error_packet {
 	int errnum;
-	enum error_cause cause; // TODO actually use
+	enum error_cause cause;
 };
 _Static_assert(
 	sizeof(struct error_packet) <= PIPE_BUF,
@@ -334,27 +337,72 @@ static void print_command(argument_list cmd, struct file_descriptors fds, int pi
 }
 
 /**
- *   1. create a new process group for background processes
+ *   1. create a new process group
  *   2. open initial stdin/final stdout
  *   3. create required pioes
  *   4. start commands with their pipes
  **/
 static int run_piped_commands(const struct pipeline *p, int error_fd, int verbose) {
-	// TODO do not ignore SIGINT
+	sigset_t sigmask;
+	sigfillset(&sigmask);
+	__attribute__((cleanup(closep_no_std_no_errno)))
+	int signal_fd = signalfd(-1, &sigmask, 0);
+	if(signal_fd < 0) {
+		write_error_pipe_no_errno(error_fd, errno, ERROR_SIGNALFD);
+		return -1;
+	}
+	if(sigprocmask(SIG_SETMASK, &sigmask, NULL) < 0) {
+		write_error_pipe_no_errno(error_fd, errno, ERROR_SIGPROCMASK);
+		return -1;
+	}
 
-	// Background jobs/pipelines are in a different process group than the
-	// process controlling the terminal, see https://en.wikipedia.org/wiki/Background_process
-	// All but the the process group of the process controlling the terminal
-	// will receive SIGTTIN when attempting to read from the terminal.
-	// (The session ID belongs to the terminal, not the shell (see credentials(7))
-	// so we don't need setsid(2).)
-	if(p->background) {
-		// create a new process group for background pipelines
-		if(setpgid(getpid(), 0) < 0) {
-			write_error_pipe_no_errno(error_fd, errno, ERROR_SETPGID);
+	// The following hierarchy exists:
+	// session > controllin0g termjnal > process group
+	//
+	// All processes sharing the same controlling terminal are also part of
+	// the same session. Since we want to keep the controlling terminal
+	// (if any) we do not change the session ID (with setsid(2)).
+	//
+	// A controlling terminal has exactly one foreground process group and
+	// any number of background process groups. If a background process group
+	// tries to read from the controlling terminal it receices SIGTTIN. The
+	// foreground process group is set with `tcsetgrp(3)`. `SIGINT` caused
+	// by Ctrl+C on the terminal is only sent to the foreground process group.
+	//
+	// Initially the shell's process group is the controlling terminal's
+	// foreground process group. Once a pipeline is started, its process group
+	// is set to be in the foreground, unless the pipeline is to be run in
+	// the background. Once the pipeline is finished the shell will become
+	// foreground again.
+	//
+	// see credentials(7), setsid(2)
+	if(setpgid(getpid(), 0) < 0) {
+		write_error_pipe_no_errno(error_fd, errno, ERROR_SETPGID);
+		return -1;
+	}
+	if(!p->background) {
+		// set current pipeline's process group to foreground
+		// TODO STDIN_FILENO vs STDERR_FILENO, bash seems to use STDERR_FILENO
+		if(tcsetpgrp(STDIN_FILENO, 0) < 0 && errno != ENOTTY) {
+			write_error_pipe_no_errno(error_fd, errno, ERROR_TCSETPGRP);
 			return -1;
 		}
 	}
+
+	// Count pipeline's commands to allocate buffer for PIDs.
+	size_t commands_count = 0;
+	for(argument_list *cmd = p->commands; *cmd; ++cmd) {
+		++commands_count;
+	}
+	// Allocate PID buffer on stack, so we do not have to manage the memory.
+	// C99 has variable length arrays but they are not supported everywhere.
+	// The array will be terminated by -1.
+	pid_t *child_pids = alloca(sizeof(*child_pids) * (commands_count + 1));
+	for(size_t i = 0; i <= commands_count; ++i) {
+		child_pids[i] = -1;
+	}
+
+	// TODO signal handlers
 
 	__attribute__((cleanup(closep_no_std_no_errno)))
 	int current_stdin = STDIN_FILENO;
@@ -376,6 +424,7 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 		}
 	}
 
+	pid_t *child_pid_ptr = child_pids;
 	for(argument_list *cmd = p->commands; *cmd; ++cmd) {
 		int fds[2] = {-1, final_stdout};
 		if(cmd[1]) {
@@ -428,10 +477,21 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 			return -1;
 		}
 
+		*child_pid_ptr++ = child;
+
 		// Another file-descriptor to the read end won't mess with EOF, so we
 		// can ignore the error.
 		(void)!closep_no_std(&current_stdin);
 		current_stdin = fds[0];
+
+		/*
+#ifdef TRACE_FILE_DESCRIPTORS
+		flock(STDERR_FILENO, LOCK_EX);
+		dprintf(STDERR_FILENO, "exec'd %s (%d):\n", cmd[0][0], getpid());
+		print_open_file_descriptors_no_errno();
+		flock(STDERR_FILENO, LOCK_UN);
+#endif
+		*/
 	}
 
 	// close error_fd, starting processes was successful
@@ -441,16 +501,57 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 	}
 
 #ifdef TRACE_FILE_DESCRIPTORS
-	flock(STDERR_FILENO, LOCK_EX);
 	dprintf(STDERR_FILENO, "complete pipeline started (%d).\n", getpid());
 	print_open_file_descriptors_no_errno();
-	flock(STDERR_FILENO, LOCK_UN);
 #endif
 
+	int exit_status = 0;
 	// If the commands are to be run in the background we can just exit our
 	// pipeline's subprocess after all its commands where started.
 	if(!p->background) {
-		// TODO wait
+		while(1) {
+			// TODO think about waitpid(0, ...)
+			// Do we care if child processes changed their process group?
+			// see https://man7.org/linux/man-pages/man2/wait.2.html#DESCRIPTION
+			int status;
+			pid_t pid = waitpid(-1, &status, 0);
+			if(pid < 0) {
+				if(errno == ECHILD) {
+					// no more child processes running
+					break;
+				} else if(errno == EINTR) {
+					continue;
+				} else {
+					// should not be returned by waitpid, but better safe than sorry
+					write_error_pipe_no_errno(error_fd, errno, ERROR_WAIT);
+					return -1;
+				}
+			}
+			if(WIFEXITED(status) || WIFSIGNALED(status)) {
+				// remove from child_pids (move every PID after `pid` one forward)
+				for(pid_t *pid_ptr = child_pids; *pid_ptr >= 0; ++pid_ptr) {
+					if(*pid_ptr == pid) {
+						while(*pid_ptr++ >= 0) {
+							pid_ptr[-1] = pid_ptr[0];
+						}
+						break;
+					}
+				}
+
+				if(WEXITSTATUS(status) != EXIT_SUCCESS) {
+					if(exit_status != 0) {
+						exit_status = status;
+					}
+					for(pid_t *pid_ptr = child_pids; *pid_ptr >= 0; ++pid_ptr) {
+						if(verbose) {
+							fprintf(stderr, "kill(%zd, SIGTERM)\n", (ssize_t)*pid_ptr);
+						}
+						(void)!kill(*pid_ptr, SIGTERM);
+					}
+				}
+			}
+		}
+		
 	}
 
 	return 0;
@@ -458,6 +559,7 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 
 /**
  *  Execute the pipeline. (`run_piped_commands` actually does everything.)
+ *  TODO If `p->background` it will return the exit code of blah of the pipeline.
  */
 int run_pipeline(const struct pipeline *p, int verbose) {
 	int error_fds[2];
@@ -479,7 +581,13 @@ int run_pipeline(const struct pipeline *p, int verbose) {
 			if(n > 0) {
 				// Reads of at most `PIPE_BUF` bytes are atomic, so if `n > 0`
 				// then `n >= sizeof(e)`.
-				errno = e.errnum;
+				if(e.cause == EXIT_NO_ERROR) {
+					// TODO
+				} else {
+!					kill_child_no_errno(pgrp);
+					errno = e.errnum;
+				}
+				break;
 			} else if(n == 0) {
 				// write end was close
 				(void)!close(error_fds[0]);
@@ -493,7 +601,21 @@ int run_pipeline(const struct pipeline *p, int verbose) {
 			}
 		}
 
-		// TODO waitpid
-		return 0;
+		int status;
+		do {
+			if(waitpid(pgrp, &status, 0) < 0) {
+				BACKUP_ERRNO();
+				kill(pgrp, SIGKILL);
+				return -1;
+			}
+		} while(!WIFEXITED(status) && !WIFSIGNALED(status));
+
+		// set the shells process group to foreground
+		// TODO STDIN_FILENO vs STDERR_FILENO, bash seems to use STDERR_FILENO
+		if(tcsetpgrp(STDIN_FILENO, 0) < 0 && errno != ENOTTY) {
+			return -1;
+		}
+
+		return WEXITSTATUS(status);
 	}
 }
