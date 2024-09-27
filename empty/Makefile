@@ -7,7 +7,7 @@ LDFLAGS = -nostdlib -m32
 all: $(BINARY)
 
 run: $(BINARY)
-	./$(BINARY)
+	./$(BINARY) < /etc/os-release
 
 $(BINARY): $(OBJ)
 
