@@ -1,3 +1,3 @@
-extern "C" void _start() {
-	while(1) { }
+int main(void) {
+	return 1;
 }
