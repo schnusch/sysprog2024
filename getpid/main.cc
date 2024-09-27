@@ -1,4 +1,6 @@
 #include <sys/syscall.h>
+#include <sys/mman.h>
+#include <stddef.h>
 
 static int getpid() {
     int v = SYS_getpid;
@@ -44,7 +46,43 @@ void print_num(int num) {
     write(1, &digit, 1);
 }
 
+void *mmap(unsigned int size) {
+    int v = SYS_mmap2;
+    asm volatile (
+        "int $0x80"
+        : "+a"(v)
+        : "b"(0),
+          "c"(size),
+          "d"(PROT_READ | PROT_WRITE),
+          "S"(MAP_PRIVATE | MAP_ANONYMOUS),
+          "D"(-1)
+    );
+    if(v < 0 && v > -4096)
+        return NULL;
+    return (void*)v;
+}
+
+void *malloc(unsigned int size) {
+    static void *cur = NULL;
+    static unsigned int rem = 0;
+    if(rem < size) {
+        unsigned int amount = size < 1024 * 1024 ? 1024 * 1024 : size;
+        void *res = mmap(amount);
+        if(!res)
+            return NULL;
+        cur = res;
+        rem = amount;
+    }
+
+    void *res = cur;
+    cur = (void*)((unsigned int)cur + size);
+    rem -= size;
+    return res;
+}
+
 int main() {
+    void *test = malloc(4);
+
     int lines = 0;
     char c;
     while(read(0, &c, 1) > 0) {
