@@ -9,8 +9,17 @@ static int getpid() {
     return v;
 }
 
-static unsigned int write(int fd, const char *buffer, unsigned int count) {
-    unsigned int v = SYS_write;
+static int read(int fd, char *buffer, unsigned int count) {
+    int v = SYS_read;
+    asm volatile (
+        "int $0x80"
+        : "+a"(v) : "b"(fd), "c"(buffer), "d"(count)
+    );
+    return v;
+}
+
+static int write(int fd, const char *buffer, unsigned int count) {
+    int v = SYS_write;
     asm volatile (
         "int $0x80"
         : "+a"(v) : "b"(fd), "c"(buffer), "d"(count)
@@ -24,11 +33,26 @@ extern "C" void exit(int code) {
         "int $0x80"
         :: "a"(v), "b"(code)
     );
+    __builtin_unreachable();
+}
+
+void print_num(int num) {
+    if(num >= 10) {
+        print_num(num / 10);
+    }
+    char digit = '0' + (num % 10);
+    write(1, &digit, 1);
 }
 
 int main() {
-    getpid();
-    write(1, "Hello World!\n", 13);
+    int lines = 0;
+    char c;
+    while(read(0, &c, 1) > 0) {
+        if(c == '\n')
+            lines++;
+    }
+    print_num(lines);
+    write(1, "\n", 1);
     return 0;
 }
 
