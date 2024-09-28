@@ -1,0 +1,7 @@
+set pagination off
+
+break verify_password
+run < /dev/null
+info proc mappings
+print/a *(void **)$ebp
+quit

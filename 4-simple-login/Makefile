@@ -3,8 +3,14 @@ CLANG_TIDY_CHECKS = llvm-include-order,misc-include-cleaner
 
 .PHONY: \
 	clean \
+	gdb-overflow-exit-0 \
+	gdb-overflow-exit-1 \
+	gdb-overflow-nothing \
 	gdb-overflow-sigsegv \
 	gdb-tui \
+	test-overflow-exit-0 \
+	test-overflow-exit-1 \
+	test-overflow-nothing \
 	test-overflow-sigsegv \
 	test-password
 
@@ -16,7 +22,7 @@ overflow: overflow.c
 	$(CC) $(CFLAGS) -o $@ overflow.c
 
 clean:
-	$(RM) overflow overflow.txt overflow-sigsegv.txt
+	$(RM) overflow overflow.txt overflow-exit-0.txt overflow-exit-1.txt overflow-nothing.txt overflow-sigsegv.txt
 
 test-password:
 	./simple_login < password.txt
@@ -28,5 +34,39 @@ gdb-overflow-sigsegv: gdb/overflow.txt overflow-sigsegv.txt
 	gdb -x gdb/overflow.txt ./simple_login
 overflow-sigsegv.txt: overflow Makefile
 	./overflow 0xFFFFFFFF > .tmp.$@
+	mv .tmp.$@ $@
+	-xxd $@
+
+test-overflow-nothing: overflow-nothing.txt
+	./simple_login < overflow-nothing.txt
+gdb-overflow-nothing: gdb/overflow.txt overflow-nothing.txt
+	ln -Tfs overflow-nothing.txt overflow.txt
+	gdb -x gdb/overflow.txt ./simple_login
+overflow-nothing.txt: overflow Makefile
+	./overflow -b 0xffffdcc8 0x08048455 > .tmp.$@
+	mv .tmp.$@ $@
+	-xxd $@
+
+# run gdb with input passwords that makes simple_login exit with 0
+test-overflow-exit-0: overflow-exit-0.txt
+	./simple_login < overflow-exit-0.txt
+gdb-overflow-exit-0: gdb/overflow.txt overflow-exit-0.txt
+	ln -Tfs overflow-exit-0.txt overflow.txt
+	gdb -x gdb/overflow.txt ./simple_login
+overflow-exit-0.txt: overflow Makefile
+	# jump to unwinding of main, see $ objdump -Mintel -d simple_login
+	./overflow 0x08048489 > .tmp.$@
+	mv .tmp.$@ $@
+	-xxd $@
+
+# run gdb with input passwords that makes simple_login exit with 1
+test-overflow-exit-1: overflow-exit-1.txt
+	./simple_login < overflow-exit-1.txt
+gdb-overflow-exit-1: gdb/overflow.txt overflow-exit-1.txt
+	ln -Tfs overflow-exit-1.txt overflow.txt
+	gdb -x gdb/overflow.txt ./simple_login
+overflow-exit-1.txt: overflow Makefile
+	# jump to unwinding of main, see $ objdump -Mintel -d simple_login
+	./overflow -v 0x08048489 > .tmp.$@
 	mv .tmp.$@ $@
 	-xxd $@
