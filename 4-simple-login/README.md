@@ -345,3 +345,17 @@ input that will execute `objdump -d -Mintel simple_login` and disassemble
 
 This currently only works in gdb, without it the address of the read buffer
 differs.
+
+### What practical countermeasures of contemporary UNIX systems and compilers complicate buffer overflow attacks?
+
+#### Randomization
+
+> Instead of separating the code from the data, another mitigation technique is to introduce randomization to the memory space of the executing program. Since the attacker needs to determine where executable code that can be used resides, either an executable payload is provided (with an executable stack) or one is constructed using code reuse such as in ret2libc or return-oriented programming (ROP). Randomizing the memory layout will, as a concept, prevent the attacker from knowing where any code is. However, implementations typically will not randomize everything; usually the executable itself is loaded at a fixed address and hence even when [ASLR](https://en.wikipedia.org/wiki/ASLR) (address space layout randomization) is combined with a non-executable stack the attacker can use this fixed region of memory. Therefore, all programs should be compiled with [PIE](https://en.wikipedia.org/wiki/Position-independent_code#Position-independent_executables) (position-independent executables) such that even this region of memory is randomized. The entropy of the randomization is different from implementation to implementation and a low enough entropy can in itself be a problem in terms of brute forcing the memory space that is randomized.
+
+— <https://en.wikipedia.org/wiki/Stack_buffer_overflow#Randomization>
+
+#### Canaries
+
+> Typically, buffer overflow protection modifies the organization of data in the stack frame of a function call to include a "canary" value that, when destroyed, shows that a buffer preceding it in memory has been overflowed. This provides the benefit of preventing an entire class of attacks. According to some researchers,[3] the performance impact of these techniques is negligible.
+
+— <https://en.wikipedia.org/wiki/Buffer_overflow_protection#Overview>
