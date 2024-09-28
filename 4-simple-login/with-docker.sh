@@ -1,7 +1,8 @@
 #!/bin/sh
 : ${DOCKER:=docker}
 : ${DOCKER_IMAGE:=sysprog2024/debian:latest}
-: ${DOCKER_ARGS:=-it}
+# allow gdb to turn off ASLR
+: ${DOCKER_ARGS:=-it --cap-add=SYS_PTRACE --security-opt=seccomp=unconfined}
 : ${PWD:=$(pwd)}
 
 here=$(cd "$(dirname "$0")" && pwd)
