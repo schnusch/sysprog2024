@@ -3,12 +3,14 @@ CLANG_TIDY_CHECKS = llvm-include-order,misc-include-cleaner
 
 .PHONY: \
 	clean \
+	gdb-overflow-exec \
 	gdb-overflow-exit-0 \
 	gdb-overflow-exit-1 \
 	gdb-overflow-exit-2 \
 	gdb-overflow-nothing \
 	gdb-overflow-sigsegv \
 	gdb-tui \
+	test-overflow-exec \
 	test-overflow-exit-0 \
 	test-overflow-exit-1 \
 	test-overflow-exit-2 \
@@ -24,7 +26,7 @@ overflow: overflow.c
 	$(CC) $(CFLAGS) -o $@ overflow.c
 
 clean:
-	$(RM) overflow overflow.txt overflow-exit-0.txt overflow-exit-1.txt overflow-exit-2.txt overflow-nothing.txt overflow-sigsegv.txt
+	$(RM) overflow overflow.txt overflow-exec.txt overflow-exit-0.txt overflow-exit-1.txt overflow-exit-2.txt overflow-nothing.txt overflow-sigsegv.txt
 
 test-password:
 	./simple_login < password.txt
@@ -82,5 +84,16 @@ gdb-overflow-exit-2: gdb/overflow-exec.txt overflow-exit-2.txt
 	gdb -x gdb/overflow.txt ./simple_login
 overflow-exit-2.txt: overflow Makefile
 	./overflow -e2 0xf7dcfd50 > .tmp.$@
+	mv .tmp.$@ $@
+	-xxd $@
+
+# run gdb with input passwords that makes simple_login call execlp(...)
+test-overflow-exec: overflow-exec.txt
+	# does not seem to work, even with ASLR off
+	setarch -R strace ./simple_login < overflow-exec.txt
+gdb-overflow-exec: gdb/overflow-exec.txt overflow-exec.txt
+	gdb -x gdb/overflow-exec.txt ./simple_login
+overflow-exec.txt: overflow Makefile
+	./overflow -x 0xf7e74470 objdump -d -Mintel simple_login > .tmp.$@
 	mv .tmp.$@ $@
 	-xxd $@

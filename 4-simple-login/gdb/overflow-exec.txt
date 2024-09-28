@@ -1,0 +1,42 @@
+# do not wait for Return key
+set pagination off
+
+break verify_password
+break *(verify_password+142)
+
+run < overflow-exec.txt
+
+# verify_password
+print/s "ADDR_PASSWORD:"
+print/a &password
+print/s "ADDR_BASE_POINTER:"
+print/a $ebp
+
+continue
+
+# *(verify_password+142): right before return
+print/s "$esp:"
+print/a $esp
+print/s "jump address: *(void **)$esp:"
+print/a *(void **)$esp
+print/s "execlp's return address: *((void **)$esp + 1)"
+print/a *((void **)$esp + 1)
+print/s "first argument: *((void **)$esp + 2)"
+print/a *((void **)$esp + 2)
+print/s *((char **)$esp + 2)
+print/s "second argument: *((void **)$esp + 3)"
+print/a *((void **)$esp + 3)
+print/s *((char **)$esp + 3)
+print/s "third argument: *((void **)$esp + 4)"
+print/a *((void **)$esp + 4)
+print/s *((char **)$esp + 4)
+print/s "fourth argument: *((void **)$esp + 5)"
+print/a *((void **)$esp + 5)
+print/s *((char **)$esp + 5)
+print/s "fifth argument: *((void **)$esp + 6)"
+print/a *((void **)$esp + 6)
+print/s *((char **)$esp + 6)
+print/s "sixth argument: *((void **)$esp + 7)"
+print/a *((void **)$esp + 7)
+print/s *((char **)$esp + 7)
+x/60xb (char *)$esp
