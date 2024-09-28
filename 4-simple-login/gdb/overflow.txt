@@ -1,0 +1,89 @@
+# do not wait for Return key
+set pagination off
+# readable assembler
+set disassembly-flavor intel
+
+break verify_password
+break *(verify_password+33)
+break *(verify_password+78)
+break *(verify_password+142)
+
+run < overflow.txt
+
+# verify_password: at start of verify_password
+stepi
+print/s "at the function start"
+disassemble verify_password
+print/s "base pointer: $ebp"
+print/a $ebp
+print/s "pushed ebp: *(uint32_t *)$ebp"
+print/x *(uint32_t *)$ebp
+print/s "password buffer: &password"
+print/a &password
+print/s "password buffer: $eax"
+print/a $eax
+print/s "pointer to return address: $ebp + 4"
+print/a $ebp + 4
+print/s "return address: *($ebp + 4)"
+print/a *(void **)($ebp + 4)
+print/s "number of bytes from password buffer including return address, we expect 216"
+print/d (char *)($ebp + 8) - (char *)&password
+
+continue
+
+# *(verify_password+33): after scanf returned in verify_password
+print/s "right after scanf"
+disassemble verify_password
+print/s "stack pointer: $esp"
+print/a $esp
+print/s "base pointer: $ebp"
+print/a $ebp
+print/s "input password:"
+print/a &password
+x/216xb password
+print/s "return address: *($ebp + 4)"
+print/a *(void **)($ebp + 4)
+## print the current stack frame
+#eval "x/%dxb $esp", $ebp + 8 - $esp
+
+continue
+
+# *(verify_password+78): right before strcmp
+# we do not set our breakpoint at verify_password+84 because repz will repeat
+print/s "right before strcmp:"
+disassemble verify_password
+print/s "input password: $esi"
+print/s (char *)$esi
+x/200xb (char *)$esi
+print/s "expected password: $edi"
+print/s (char *)$edi
+
+continue
+
+# *(verify_password+142): right before return
+print/s "right before return:"
+disassemble verify_password
+print/s "stack pointer: $esp"
+print/a $esp
+print/s "base pointer: $ebp"
+print/a $ebp
+print/s "return address: *(void **)$esp"
+print/a *(void **)$esp
+print/s "eax:"
+print/d $eax
+
+# return
+stepi
+print/s "right after return:"
+disassemble main
+print/s "eax:"
+print/d $eax
+
+# remove all breakpoints and continue running
+clear verify_password
+clear *(verify_password+33)
+clear *(verify_password+78)
+clear *(verify_password+142)
+
+continue
+quit

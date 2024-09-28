@@ -191,3 +191,16 @@ We successfully manipulated the return address by writing to *password*.
 
 Since `scanf` does not do any bounds checking, we can override the return
 address if we make `scanf` read 216 bytes into *password*.
+
+### Implementation
+
+[overflow.c](./overflow.c) takes a hexadecimal address as an argument and
+generates an input for `simple_login` that will exploit the buffer overflow
+and makes `simple_login` execute code at that address.
+
+### Test
+
+`make test-overflow-sigsegv` runs `simple_login` with an input that makes it
+jump to 0xFFFFFFFF. `make gdb-overflow` runs the same in gdb and prints
+relevant information while running. You can see that `verify_password` returns
+execution to 0xFFFFFF.
