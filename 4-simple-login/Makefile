@@ -5,11 +5,13 @@ CLANG_TIDY_CHECKS = llvm-include-order,misc-include-cleaner
 	clean \
 	gdb-overflow-exit-0 \
 	gdb-overflow-exit-1 \
+	gdb-overflow-exit-2 \
 	gdb-overflow-nothing \
 	gdb-overflow-sigsegv \
 	gdb-tui \
 	test-overflow-exit-0 \
 	test-overflow-exit-1 \
+	test-overflow-exit-2 \
 	test-overflow-nothing \
 	test-overflow-sigsegv \
 	test-password
@@ -22,7 +24,7 @@ overflow: overflow.c
 	$(CC) $(CFLAGS) -o $@ overflow.c
 
 clean:
-	$(RM) overflow overflow.txt overflow-exit-0.txt overflow-exit-1.txt overflow-nothing.txt overflow-sigsegv.txt
+	$(RM) overflow overflow.txt overflow-exit-0.txt overflow-exit-1.txt overflow-exit-2.txt overflow-nothing.txt overflow-sigsegv.txt
 
 test-password:
 	./simple_login < password.txt
@@ -68,5 +70,17 @@ gdb-overflow-exit-1: gdb/overflow.txt overflow-exit-1.txt
 overflow-exit-1.txt: overflow Makefile
 	# jump to unwinding of main, see $ objdump -Mintel -d simple_login
 	./overflow -v 0x08048489 > .tmp.$@
+	mv .tmp.$@ $@
+	-xxd $@
+
+# run gdb with input passwords that makes simple_login call exit(2)
+test-overflow-exit-2: overflow-exit-2.txt
+	# we have to turn off ASLR to have exit at the expected address
+	setarch -R ./simple_login < overflow-exit-2.txt
+gdb-overflow-exit-2: gdb/overflow-exec.txt overflow-exit-2.txt
+	ln -Tfs overflow-exit-2.txt overflow.txt
+	gdb -x gdb/overflow.txt ./simple_login
+overflow-exit-2.txt: overflow Makefile
+	./overflow -e2 0xf7dcfd50 > .tmp.$@
 	mv .tmp.$@ $@
 	-xxd $@

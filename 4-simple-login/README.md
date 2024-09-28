@@ -325,3 +325,12 @@ match and with `1` if the password matched.
 Therefore `overflow` will by default generate input that fails the password
 comparison, but can be told to generate a malicious input that will satsify the
 password comparison by passing `-v`.
+
+### Code Injection
+
+#### `exit(e)`
+
+If address randomization is disabled we can call any function in libc as long
+as we know its address. `./overflow -e2 0xf7dcfd50` will prepare the stack so
+that the function at 0xf7dcfd50, which is `exit`, will be called with an
+argument of `2`.

