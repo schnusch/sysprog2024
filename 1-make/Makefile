@@ -1,6 +1,6 @@
 CC = cc
 CFLAGS = -std=c99 -O2 -g -Wall -Wextra -Wpedantic -Wvla
-LDFLAGS =
+LDFLAGS = -lm
 
 srcs = main.c sincos.c
 objs = $(srcs:.c=.o)
