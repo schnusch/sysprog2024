@@ -27,5 +27,5 @@ image-id: Dockerfile
 
 test-%:
 	mkdir -p $@.d
-	(cd $@.d && ../$@-prepare.sh) > $@-expect.txt
-	(cd $@.d && stdbuf -o0 ../$@-run.sh 2>&1) | diff -u $@-expect.txt -
+	(cd $@.d && ../$@-prepare.sh) | sort > $@-expect.txt
+	(cd $@.d && stdbuf -o0 ../$@-run.sh 2>&1) | sort | diff -u $@-expect.txt -
