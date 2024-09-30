@@ -8,6 +8,13 @@ public:
 
   Foo() = default;
 
+  Foo &operator = (Foo const &rhs) noexcept
+  {
+    printf("%s: this=%p, rhs=%p\n", __PRETTY_FUNCTION__, (void *)this, (void *)&rhs);
+    c = rhs.c;
+    return *this;
+  }
+
   // intialized this->m to argument m
   Foo(unsigned char c) : c(c)
   {
@@ -31,7 +38,7 @@ int main()
   printf("sizeof(o) == %zd\n", sizeof(o));
   // global variables are in the bss segment, which is zero
   printf("o.c == %hhd\n", o.c);
-  // implicit `=` operator
+  // `=` operator
   o = 3;
   printf("o.c == %hhd\n", o.c);
   // objects on stack may be uninitialized
