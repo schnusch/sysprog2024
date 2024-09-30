@@ -15,6 +15,13 @@ public:
 // o's implicit constructor/destructor is called before/after main
 Foo o(2);
 
+/*
+Beware of this code:
+Foo o();
+
+This is actually a function declaration.
+*/
+
 int main()
 {
   printf("hello world\n");
