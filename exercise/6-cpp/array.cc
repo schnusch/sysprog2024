@@ -14,6 +14,11 @@ public:
 
   Array() = default;
   explicit Array(size_t size) : size(size), content(new int[size]) { }
+
+  ~Array()
+  {
+    delete[] content;
+  }
 };
 
 Array a;
