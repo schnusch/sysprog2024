@@ -201,8 +201,14 @@ static int find(const struct find_args *args, const struct dir_chain *this) {
 		// nop
 	} else {
 		if(print_dir_chain(args->out, this) < 0 || fputc('\n', args->out) == EOF) {
-			// TODO error message
-			abort();
+			if(args->err) {
+				int errbak = errno;
+				if(args->err_prefix) {
+					fprintf(args->err, "%s: ", args->err_prefix);
+				}
+				fprintf(args->err, "cannot write: %s\n", strerror(errbak));
+				errno = errbak;
+			}
 			return -1;
 		}
 	}
