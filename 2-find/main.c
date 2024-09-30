@@ -244,8 +244,8 @@ static int find(struct find_args *args, const struct dir_chain *this) {
 	};
 
 	// Open a new directory file descriptor to access children of the current
-	// directory.
-	child.dir_fd = openat(this->dir_fd, this->name, O_DIRECTORY);
+	// directory. We cannot use O_PATH because we later use fdopendir(3).
+	child.dir_fd = openat(this->dir_fd, this->name, O_RDONLY | O_DIRECTORY);
 	if(child.dir_fd < 0) {
 		find_error(args->err, args->err_prefix, "open", this);
 		return -1;

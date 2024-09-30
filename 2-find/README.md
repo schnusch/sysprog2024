@@ -17,7 +17,7 @@ file system.
 ## Directory File Descriptors
 
 When recursing, every file is accessed relative to a directory file descriptor
-(see [O_PATH](https://man7.org/linux/man-pages/man2/open.2.html#DESCRIPTION)).
+(see [O_DIRECTORY](https://man7.org/linux/man-pages/man2/open.2.html#DESCRIPTION)).
 When recursing into a directory, a file descriptor to the directory is opened,
 and then its children are accessed relative to that file descriptor.
 
