@@ -114,7 +114,9 @@ static int parse_args(struct cmd_args *args, int argc, char **argv) {
 struct dir_chain {
 	const char *name;
 	int dir_fd;
-	const struct dir_chain *parent;
+	dev_t dev;
+	ino_t ino;
+	struct dir_chain *parent;
 };
 
 /**
@@ -187,7 +189,7 @@ static void find_error(
  *  `args` base arguments, passed on recursively, see `struct find_args`
  *  `this` see `struct dir_chain`
  */
-static int find(struct find_args *args, const struct dir_chain *this) {
+static int find(struct find_args *args, struct dir_chain *this) {
 	////////////////////////////////////////////////////////////////////
 	// WE MUST NOT USE `args->st` AFTER PASSING IT TO ANOTHER `find`, //
 	// BECAUSE IT WILL BE REUSED.                                     //
@@ -205,6 +207,27 @@ static int find(struct find_args *args, const struct dir_chain *this) {
 	// st_dev changed, so we crossed onto another file system, stop recursion
 	if(args->xdev != (dev_t)-1 && args->st.st_dev != args->xdev) {
 		return 0;
+	}
+
+	// detect file system loop
+	this->dev = args->st.st_dev;
+	this->ino = args->st.st_ino;
+	for(const struct dir_chain *c = this->parent; c; c = c->parent) {
+		if(c->ino == this->ino && c->dev == this->dev) {
+			if(args->err) {
+				int errbak = errno;
+				if(args->err_prefix) {
+					fprintf(args->err, "%s: ", args->err_prefix);
+				}
+				fputs("file system loop detected: ", args->err);
+				print_dir_chain(args->err, this);
+				fputs(" = ", args->err);
+				print_dir_chain(args->err, c);
+				fputc('\n', args->err);
+				errno = errbak;
+			}
+			return -1;
+		}
 	}
 
 	if(

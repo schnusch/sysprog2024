@@ -35,6 +35,12 @@ Every call to [`find`](./main.c) receives a `struct dir_chain`.
 `name` we can reconstruct the file path we are currently operating on, without
 any manual string handling, see [`print_dir_chain`](./main.c).
 
+To detect file system loops `find` stores the file's `st_dev` and `st_ino` in
+`struct dir_chain *this`. If the current `st_dev` and `st_ino` is equal to any
+previous entries in the linked list, the element was encountered previously and
+we can detect a file system loop. Such loops might be caused by symlinks with
+`-follow` or bind mounts.
+
 ## `struct find_args`
 
 Arguments that stay the same (except the member `struct stat st;`) when
