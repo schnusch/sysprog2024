@@ -16,7 +16,7 @@ public:
   }
 
   // intialized this->m to argument m
-  Foo(unsigned char c) : c(c)
+  explicit Foo(unsigned char c) : c(c)
   {
     printf("Foo(c=%hhd): this=%p\n", c, (void *)this);
   }
@@ -39,11 +39,11 @@ int main()
   // global variables are in the bss segment, which is zero
   printf("o.c == %hhd\n", o.c);
   // `=` operator
-  o = 3;
+  o = Foo(3);
   printf("o.c == %hhd\n", o.c);
   // does not first create a Foo with default constructor, deletes it, and
   // then uses `=` operator. (copy elision)
-  Foo l = 4;
+  Foo l = Foo(4);
   printf("l.c == %hhd\n", l.c);
   return 0;
 }
