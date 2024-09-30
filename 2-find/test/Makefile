@@ -16,8 +16,8 @@ tests = \
 test: image-id
 	$(DOCKER) run \
 		-v ..:/host:ro \
-		-v ./test-loop.d/loop:/loop:ro \
-		-v ./test-loop.d/loop:/loop/loop:ro \
+		-v ./loop:/loop:ro \
+		-v ./loop:/loop/loop:ro \
 		--tmpfs /test \
 		--tmpfs /test/test/test-loop.d/a/d \
 		--tmpfs /test/test/test-xdev.d/a/b \
