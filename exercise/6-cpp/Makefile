@@ -2,7 +2,7 @@ CXXFLAGS = -std=c++20 -O0 -Wall -Wextra -Wpedantic
 
 .PHONY: all clean
 
-all: c
+all: array c
 
 clean:
-	$(RM) c
+	$(RM) array c
