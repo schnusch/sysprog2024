@@ -129,12 +129,19 @@ static int print_dir_chain(FILE *out, const struct dir_chain *chain) {
 		if(ret < 0) {
 			return ret;
 		} else if(ret != 0) {
+			// Return 0 tells us no preceding path element or the preceding
+			// element ended with `/`. Only print `/` if neither is the case.
 			if(fputc('/', out) == EOF) {
 				return -1;
 			}
 		}
 		if(fputs(chain->name, out) == EOF) {
 			return -1;
+		}
+		size_t n = strlen(chain->name);
+		if(n > 0 && chain->name[n - 1] == '/') {
+			// Trailing slash, do not print another slash after it.
+			return 0;
 		}
 		return 1;
 	} else {
@@ -346,6 +353,9 @@ static int find(struct find_args *args, struct dir_chain *this) {
  *  If `cmd->xdev` is set, we also stat `name` to retrieve the expected `dev_t`.
  */
 static int find_prepare(const char *argv0, const char *name, const struct cmd_args *cmd) {
+	// We cannot remove trailing / from `name` here, so that `print_dir_chain`
+	// does not print //, because `a` and `a/` might be different paths when
+	// symlinks are involved and the path `/`.
 	struct dir_chain root = {
 		.name = name,
 		.dir_fd = AT_FDCWD,

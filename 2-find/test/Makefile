@@ -2,6 +2,7 @@ DOCKER = docker
 
 tests = \
 	test-absolute \
+	test-absolute-name \
 	test-loop \
 	test-noaccess \
 	test-type-d \
