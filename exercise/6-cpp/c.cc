@@ -41,9 +41,9 @@ int main()
   // `=` operator
   o = 3;
   printf("o.c == %hhd\n", o.c);
-  // objects on stack may be uninitialized
-  { size_t uninitialized = -1; }
-  Foo l;
+  // does not first create a Foo with default constructor, deletes it, and
+  // then uses `=` operator. (copy elision)
+  Foo l = 4;
   printf("l.c == %hhd\n", l.c);
   return 0;
 }
