@@ -4,21 +4,21 @@ class Foo
 {
 public:
   // the single phantom byte is omitted for non-empty classes
-  char c;
+  size_t size = 0;
 
   Foo() = default;
 
   Foo &operator = (Foo const &rhs) noexcept
   {
     printf("%s: this=%p, rhs=%p\n", __PRETTY_FUNCTION__, (void *)this, (void *)&rhs);
-    c = rhs.c;
+    size = rhs.size;
     return *this;
   }
 
   // intialized this->m to argument m
-  explicit Foo(unsigned char c) : c(c)
+  explicit Foo(unsigned char size) : size(size)
   {
-    printf("Foo(c=%hhd): this=%p\n", c, (void *)this);
+    printf("Foo(size=%hhd): this=%p\n", size, (void *)this);
   }
 };
 
@@ -37,13 +37,13 @@ int main()
   printf("hello world\n");
   printf("sizeof(o) == %zd\n", sizeof(o));
   // global variables are in the bss segment, which is zero
-  printf("o.c == %hhd\n", o.c);
+  printf("o.size == %zu\n", o.size);
   // `=` operator
   o = Foo(3);
-  printf("o.c == %hhd\n", o.c);
+  printf("o.size == %zu\n", o.size);
   // does not first create a Foo with default constructor, deletes it, and
   // then uses `=` operator. (copy elision)
   Foo l = Foo(4);
-  printf("l.c == %hhd\n", l.c);
+  printf("l.size == %zu\n", l.size);
   return 0;
 }
