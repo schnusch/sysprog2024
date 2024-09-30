@@ -1,3 +1,4 @@
+#define _GNU_SOURCE  // O_PATH
 #define _POSIX_C_SOURCE 200809L  // fdopendir, fstatat
 #include <assert.h>
 #include <dirent.h>
@@ -230,7 +231,7 @@ static int find(struct find_args *args, const struct dir_chain *this) {
 	};
 
 	// access children by file descriptor
-	child.dir_fd = openat(this->dir_fd, this->name, O_DIRECTORY);
+	child.dir_fd = openat(this->dir_fd, this->name, O_PATH | O_DIRECTORY);
 	if(child.dir_fd < 0) {
 		find_error(args->err, args->err_prefix, "open", this);
 		return -1;
