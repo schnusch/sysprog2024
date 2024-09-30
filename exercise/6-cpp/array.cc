@@ -12,10 +12,8 @@ public:
     printf("const: array: this=%p: size=%zu content=%p\n", (void *)this, size, (void *)content);
   }
 
-  void print_infos()
-  {
-    printf("non-const: array: this=%p: size=%zu content=%p\n", (void *)this, size, (void *)content);
-  }
+  Array() = default;
+  explicit Array(size_t size) : size(size), content(new int[size]) { }
 };
 
 Array a;
@@ -24,6 +22,9 @@ int main()
 {
   printf("hello\n");
   a.print_infos();
-  static_cast<Array const &>(a).print_infos();
+
+  Array b(10);
+  b.print_infos();
+
   return 0;
 }
