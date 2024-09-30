@@ -186,7 +186,10 @@ static int find(const struct find_args *args, const struct dir_chain *this) {
 		return -1;
 	}
 
-	// TODO xdev
+	// st_dev changed, so we crossed onto another file system, stop recursion
+	if(args->xdev != (mode_t)-1 && st.st_dev == args->xdev) {
+		return 0;
+	}
 
 	// TODO glob
 	if(
@@ -293,7 +296,7 @@ static int find_prepare(const char *argv0, const char *name, const struct cmd_ar
 		if(fstatat(root.dir_fd, root.name, &st, args.stat_flags) < 0) {
 			return 1;
 		}
-		assert(st.st_dev != (dev_t)-1);
+		assert(st.st_dev != args.xdev);  // we use (mode_t)-1 as a special value
 		args.xdev = st.st_dev;
 	}
 	return find(&args, &root);
