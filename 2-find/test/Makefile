@@ -3,7 +3,9 @@ DOCKER = docker
 tests = \
 	test-noaccess \
 	test-type-d \
+	test-type-d-follow \
 	test-type-f \
+	test-type-f-follow \
 	test-xdev
 
 .PHONY: \

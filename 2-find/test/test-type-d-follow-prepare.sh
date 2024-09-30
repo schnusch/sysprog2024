@@ -18,9 +18,12 @@ echo ./a/b/f
 
 # symlink to directory
 ln -s b a/g
+echo ./a/g
+echo ./a/g/f
 
 # symlink to file
 ln -s d a/h
 
 # dangling symlink
 ln -s i j
+echo "/test/find: cannot stat ./j: No such file or directory"
