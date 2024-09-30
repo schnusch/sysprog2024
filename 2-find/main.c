@@ -118,6 +118,10 @@ struct dir_chain {
 	const struct dir_chain *parent;
 };
 
+/**
+ *  Print chain->parent->...->name, chaing->parent->name, and then chain->name
+ *  separated by '/'.
+ */
 static int print_dir_chain(FILE *out, const struct dir_chain *chain) {
 	if(chain) {
 		int ret = print_dir_chain(out, chain->parent);
@@ -157,6 +161,10 @@ struct find_args {
 	struct stat st;
 };
 
+/**
+ *  Print error to `err`.
+ *  Format: "${prefix}${prefix+: }cannot ${verb} ${path}: ${strerror}"
+ */
 static void find_error(
 	FILE *err,
 	const char *prefix,
@@ -185,6 +193,11 @@ static int find(struct find_args *args, const struct dir_chain *this) {
 	// WE MUST NOT USE `args->st` AFTER PASSING IT TO ANOTHER `find`, //
 	// BECAUSE IT WILL BE REUSED.                                     //
 	////////////////////////////////////////////////////////////////////
+
+	// Call stat(2) on the file by directory file descriptor and its name
+	// relative to the file descriptor. ("/proc/self/fd/${dir_fd}/${name}")
+	// Avoids some file system race conditions, but mainly lets us avoid string
+	// manipulation.
 	if(fstatat(this->dir_fd, this->name, &args->st, args->stat_flags) < 0) {
 		find_error(args->err, args->err_prefix, "stat", this);
 		return -1;
@@ -203,6 +216,7 @@ static int find(struct find_args *args, const struct dir_chain *this) {
 	) {
 		// nop
 	} else {
+		// Print path.
 		if(print_dir_chain(args->out, this) < 0 || fputc('\n', args->out) == EOF) {
 			if(args->err) {
 				int errbak = errno;
@@ -225,19 +239,28 @@ static int find(struct find_args *args, const struct dir_chain *this) {
 	// BE VERY CAREFUL ABOUT USING `args->st` AFTER THIS POINT. //
 	//////////////////////////////////////////////////////////////
 
-	// prepare directory chain for callees
+	// Prepare next element in directory chain for callees.
 	struct dir_chain child = {
 		.parent = this,
 	};
 
-	// access children by file descriptor
+	// Open a new directory file descriptor to access children of the current
+	// directory.
 	child.dir_fd = openat(this->dir_fd, this->name, O_PATH | O_DIRECTORY);
 	if(child.dir_fd < 0) {
 		find_error(args->err, args->err_prefix, "open", this);
 		return -1;
 	}
 
-	// the fd should not be used after fdopendir(3)
+	// We must copy the directory file descriptor before passing it to to
+	// fdopendir(3) because it will take posession of it.
+	//
+	// > The fdopendir() function is like opendir(), but returns a
+	// > directory stream for the directory referred to by the open file
+	// > descriptor fd.  After a successful call to fdopendir(), fd is
+	// > used internally by the implementation, and should not otherwise
+	// > be used by the application.
+	// -- https://man7.org/linux/man-pages/man3/opendir.3.html#DESCRIPTION
 	int dup_fd = dup(child.dir_fd);
 	if(dup_fd < 0) {
 		find_error(args->err, args->err_prefix, "duplicate file descriptor to", this);
@@ -259,6 +282,7 @@ static int find(struct find_args *args, const struct dir_chain *this) {
 	// iterate over children
 	int ret = 0;
 	for(struct dirent *e; (e = readdir(d));) {
+		// ignore "." and ".."
 		if(
 			e->d_name[0] == '.'
 			&& (
@@ -272,6 +296,12 @@ static int find(struct find_args *args, const struct dir_chain *this) {
 			continue;
 		}
 		child.name = e->d_name;
+		// Now `child` will look like this:
+		// (struct dir_chain){
+		//     .name = e->d_name,
+		//     .dir_fd = /* file descriptor to the directory we are iterating */,
+		//     .parent = this,
+		// };
 		if(find(args, &child) < 0) {
 			ret = -1;
 		}
@@ -289,6 +319,10 @@ static int find(struct find_args *args, const struct dir_chain *this) {
 	return ret;
 }
 
+/**
+ *  Prepare `struct find_args` and `struct dir_chain` for `find`.
+ *  If `cmd->xdev` is set, we also stat `name` to retrieve the expected `dev_t`.
+ */
 static int find_prepare(const char *argv0, const char *name, const struct cmd_args *cmd) {
 	struct dir_chain root = {
 		.name = name,
