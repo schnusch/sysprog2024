@@ -76,7 +76,7 @@ static int parse_args(struct cmd_args *args, int argc, char **argv) {
 		} else if(strcmp(argv[i], "-follow") == 0 || strcmp(argv[i], "-L") == 0) {
 			args->stat_flags &= ~AT_SYMLINK_NOFOLLOW;
 		} else if(strcmp(argv[i], "-xdev") == 0) {
-			args->xdev = 0;
+			args->xdev = 1;
 		} else {
 			// We move positional arguments to the end of argv. argc is
 			// decremented because we do not want to parse the moved argument
@@ -204,7 +204,7 @@ static int find(struct find_args *args, const struct dir_chain *this) {
 	}
 
 	// st_dev changed, so we crossed onto another file system, stop recursion
-	if(args->xdev != (mode_t)-1 && args->st.st_dev == args->xdev) {
+	if(args->xdev != (dev_t)-1 && args->st.st_dev != args->xdev) {
 		return 0;
 	}
 
