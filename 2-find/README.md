@@ -42,3 +42,11 @@ recursing with `find` are stored in a `struct find_args` and only a pointer to
 those common arguments is passed to every call. This avoids copying all common
 arguments for `find` when recursing.
 
+## Testing
+
+`make check` runs some tests in a Docker container.
+
+For each test exist two scripts. [`test/test-*-prepare.sh`](./test) creates a
+directory structure and write the expected output of `find` to `stdout`.
+[`test/test-*-run.sh`](./test) starts `find`. The [`Makefile`](./test/Makefile)
+will compare the outputs of the two scripts.

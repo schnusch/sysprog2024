@@ -6,9 +6,12 @@ LDFLAGS =
 source_files = \
 	main.c
 
-.PHONY: all clean
+.PHONY: all check clean
 
 all: find
+
+check: find
+	$(MAKE) -C test
 
 clean:
 	$(RM) find
