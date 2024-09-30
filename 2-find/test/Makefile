@@ -24,13 +24,14 @@ test: image-id
 		--tmpfs /test \
 		--tmpfs /test/test/test-loop.d/a/d \
 		--tmpfs /test/test/test-xdev.d/a/b \
+		--tmpfs /find_testbed/testbed/basic/MNT \
 		--user user \
 		"$$(cat image-id)" \
 		make -C /test/test in-docker
 
 in-docker: $(tests)
 
-image-id: Dockerfile entrypoint.sh
+image-id: Dockerfile entrypoint.sh find_testbed/create_testbed.sh find_testbed/xdev.tar.zstd
 	$(DOCKER) build --iidfile=.tmp.$@ -f Dockerfile .
 	if ! cmp -s .tmp.$@ $@; then mv .tmp.$@ $@; fi
 
