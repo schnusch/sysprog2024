@@ -211,11 +211,6 @@ static int find(struct find_args *args, struct dir_chain *this) {
 		return -1;
 	}
 
-	// st_dev changed, so we crossed onto another file system, stop recursion
-	if(args->xdev != (dev_t)-1 && args->st.st_dev != args->xdev) {
-		return 0;
-	}
-
 	// detect file system loop
 	this->dev = args->st.st_dev;
 	this->ino = args->st.st_ino;
@@ -261,6 +256,11 @@ static int find(struct find_args *args, struct dir_chain *this) {
 
 	// we cannot recurse into non-directories
 	if(!S_ISDIR(args->st.st_mode)) {
+		return 0;
+	}
+
+	// st_dev changed, so we crossed onto another file system, stop recursion
+	if(args->xdev != (dev_t)-1 && args->st.st_dev != args->xdev) {
 		return 0;
 	}
 

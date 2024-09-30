@@ -37,3 +37,6 @@ test-%:
 	mkdir -p $@.d
 	(cd $@.d && ../$@-prepare.sh) | sort > $@-expect.txt
 	(cd $@.d && stdbuf -o0 ../$@-run.sh 2>&1) | sort | diff -u $@-expect.txt -
+	# compare to GNU find, ignore error lines
+	(cd $@.d && ../$@-find.sh) | sort > $@-find.txt
+	grep -Fv ':' $@-expect.txt | diff -u - $@-find.txt
