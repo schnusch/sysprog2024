@@ -17,9 +17,22 @@ public:
 
   // RULE OF SIX
   // copy constructor
-  Array(const Array &) = delete;
+  Array(const Array &rhs) : size(rhs.size), content(new int[size])
+  {
+    for(size_t i = 0; i < size; ++i) {
+      content[i] = rhs.content[i];
+    }
+  }
   // copy assignment operator
-  Array operator=(const Array &rhs) = delete;
+  Array operator=(const Array &rhs)
+  {
+    size = rhs.size;
+    content = new int[size];
+    for(size_t i = 0; i < size; ++i) {
+      content[i] = rhs.content[i];
+    }
+    return *this;
+  };
   // move constructor (rvalue reference)
   Array(Array &&) = delete;
   // move assignment operator (rvalue reference)
@@ -41,9 +54,12 @@ int main()
   Array b(10);
   b.print_infos();
 
-  b = a;
   Array c = b;
   c.print_infos();
+
+  Array d;
+  d = c;
+  d.print_infos();
 
   return 0;
 }
