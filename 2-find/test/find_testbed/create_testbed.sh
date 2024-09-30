@@ -53,8 +53,8 @@ cd "$TRAPS_DIR"
 i=1
 while [ $i -lt 280 ]
 do
-        mkdir sub_directory_${i}
-        cd sub_directory_${i} 2>/dev/null
+        mkdir subdir${i}
+        cd subdir${i} 2>/dev/null
         touch depth_is_${i}_here
         i=$(($i + 1))
 done
