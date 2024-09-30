@@ -1,0 +1,7 @@
+The shell script create_testbed.sh will create a directory hierarchy that you
+can test your find program with. You may also find the provided loopback disk
+image to be useful. You can mount into the created directory hierarchy as
+follows:
+
+#> sudo mount -o loop xdev.img testbed/basic/MNT
+
