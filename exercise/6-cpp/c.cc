@@ -9,7 +9,10 @@ public:
   Foo() = default;
 
   // intialized this->m to argument m
-  Foo(unsigned char c) : c(c) {}
+  Foo(unsigned char c) : c(c)
+  {
+    printf("Foo(c=%hhd): this=%p\n", c, (void *)this);
+  }
 };
 
 // o's implicit constructor/destructor is called before/after main
@@ -27,6 +30,9 @@ int main()
   printf("hello world\n");
   printf("sizeof(o) == %zd\n", sizeof(o));
   // global variables are in the bss segment, which is zero
+  printf("o.c == %hhd\n", o.c);
+  // implicit `=` operator
+  o = 3;
   printf("o.c == %hhd\n", o.c);
   // objects on stack may be uninitialized
   { size_t uninitialized = -1; }
