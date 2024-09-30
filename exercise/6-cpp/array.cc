@@ -31,5 +31,8 @@ int main()
   Array b(10);
   b.print_infos();
 
+  Array c = b;
+  c.print_infos();
+
   return 0;
 }
