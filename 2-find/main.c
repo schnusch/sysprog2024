@@ -31,7 +31,7 @@ static int parse_args(struct cmd_args *args, int argc, char **argv) {
 	*args = (struct cmd_args){
 		.name = NULL,
 		.mode = -1,
-		.stat_flags = 0,
+		.stat_flags = AT_SYMLINK_NOFOLLOW,
 		.xdev = 0,
 	};
 
@@ -74,7 +74,7 @@ static int parse_args(struct cmd_args *args, int argc, char **argv) {
 				goto usage;
 			}
 		} else if(strcmp(argv[i], "-follow") == 0 || strcmp(argv[i], "-L") == 0) {
-			args->stat_flags |= AT_SYMLINK_NOFOLLOW;
+			args->stat_flags &= ~AT_SYMLINK_NOFOLLOW;
 		} else if(strcmp(argv[i], "-xdev") == 0) {
 			args->xdev = 0;
 		} else {
