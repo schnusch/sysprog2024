@@ -13,7 +13,7 @@ public:
 };
 
 // o's implicit constructor/destructor is called before/after main
-Foo o;
+Foo o(2);
 
 int main()
 {
@@ -22,7 +22,8 @@ int main()
   // global variables are in the bss segment, which is zero
   printf("o.c == %hhd\n", o.c);
   // objects on stack may be uninitialized
-  Foo l(2);
+  { size_t uninitialized = -1; }
+  Foo l;
   printf("l.c == %hhd\n", l.c);
   return 0;
 }
