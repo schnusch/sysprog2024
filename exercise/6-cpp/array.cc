@@ -65,5 +65,8 @@ int main()
   d = b;
   d.print_infos();
 
+  d = d;
+  d.print_infos();
+
   return 0;
 }
