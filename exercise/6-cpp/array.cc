@@ -15,6 +15,16 @@ public:
   Array() = default;
   explicit Array(size_t size) : size(size), content(new int[size]) { }
 
+  // RULE OF SIX
+  // copy constructor
+  Array(const Array &) = delete;
+  // copy assignment operator
+  Array operator=(const Array &rhs) = delete;
+  // move constructor (rvalue reference)
+  Array(Array &&) = delete;
+  // move assignment operator (rvalue reference)
+  void operator=(Array &&) = delete;
+
   ~Array()
   {
     delete[] content;
@@ -31,6 +41,7 @@ int main()
   Array b(10);
   b.print_infos();
 
+  b = a;
   Array c = b;
   c.print_infos();
 
