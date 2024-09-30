@@ -26,6 +26,7 @@ public:
   // copy assignment operator
   Array operator=(const Array &rhs)
   {
+    delete[] content;
     size = rhs.size;
     content = new int[size];
     for(size_t i = 0; i < size; ++i) {
@@ -59,6 +60,9 @@ int main()
 
   Array d;
   d = c;
+  d.print_infos();
+
+  d = b;
   d.print_infos();
 
   return 0;
