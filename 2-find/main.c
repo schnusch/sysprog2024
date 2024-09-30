@@ -177,18 +177,24 @@ static void find_error(
  *  Implements find(1).
  *  `args` base arguments, passed on recursively, see `struct find_args`
  *  `this` see `struct dir_chain`
- *
- *  TODO shared `struct stat` to save memory
+ *  `st`   reuse `struct stat` to save memory
  */
-static int find(const struct find_args *args, const struct dir_chain *this) {
-	struct stat st;
-	if(fstatat(this->dir_fd, this->name, &st, args->stat_flags) < 0) {
+static int find(
+	const struct find_args *args,
+	const struct dir_chain *this,
+	struct stat *st
+) {
+	//////////////////////////////////////////////////////////////
+	// WE MUST NOT USE `st` AFTER PASSING IT TO ANOTHER `find`, //
+	// BECAUSE IT WILL BE REUSED.                               //
+	//////////////////////////////////////////////////////////////
+	if(fstatat(this->dir_fd, this->name, st, args->stat_flags) < 0) {
 		find_error(args->err, args->err_prefix, "stat", this);
 		return -1;
 	}
 
 	// st_dev changed, so we crossed onto another file system, stop recursion
-	if(args->xdev != (mode_t)-1 && st.st_dev == args->xdev) {
+	if(args->xdev != (mode_t)-1 && st->st_dev == args->xdev) {
 		return 0;
 	}
 
@@ -196,7 +202,7 @@ static int find(const struct find_args *args, const struct dir_chain *this) {
 		// name does not match
 		(args->search_name && fnmatch(args->search_name, this->name, 0) != 0)
 		// type does not match
-		|| (args->mode != (mode_t)-1 && (st.st_mode & S_IFMT) != args->mode)
+		|| (args->mode != (mode_t)-1 && (st->st_mode & S_IFMT) != args->mode)
 	) {
 		// nop
 	} else {
@@ -214,9 +220,13 @@ static int find(const struct find_args *args, const struct dir_chain *this) {
 	}
 
 	// we cannot recurse into non-directories
-	if(!S_ISDIR(st.st_mode)) {
+	if(!S_ISDIR(st->st_mode)) {
 		return 0;
 	}
+
+	////////////////////////////////////////////////////////
+	// BE VERY CAREFUL ABOUT USING `st` AFTER THIS POINT. //
+	////////////////////////////////////////////////////////
 
 	// prepare directory chain for callees
 	struct dir_chain child = {
@@ -265,7 +275,7 @@ static int find(const struct find_args *args, const struct dir_chain *this) {
 			continue;
 		}
 		child.name = e->d_name;
-		if(find(args, &child) < 0) {
+		if(find(args, &child, st) < 0) {
 			ret = -1;
 		}
 	}
@@ -305,7 +315,8 @@ static int find_prepare(const char *argv0, const char *name, const struct cmd_ar
 		assert(st.st_dev != args.xdev);  // we use (mode_t)-1 as a special value
 		args.xdev = st.st_dev;
 	}
-	return find(&args, &root);
+	struct stat st;
+	return find(&args, &root, &st);
 }
 
 _Static_assert(EXIT_FAILURE != 2, "we use exit(2) for wrong command line usage");
