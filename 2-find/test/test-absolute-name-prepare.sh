@@ -2,9 +2,11 @@
 set -e
 
 # source gets mounted here
+echo /host/test/test-absolute-name-prepare.sh
 echo /host/test/test-absolute-name-run.sh
 
 # tests are run here
+echo /test/test/test-absolute-name-prepare.sh
 echo /test/test/test-absolute-name-run.sh
 
 echo "/test/find: cannot open /proc/tty/driver: Permission denied"
