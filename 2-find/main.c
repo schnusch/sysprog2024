@@ -3,6 +3,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>  // AT_SYMLINK_NOFOLLOW
+#include <fnmatch.h>
 #include <stdlib.h>  // EXIT_*
 #include <stdio.h>
 #include <string.h>
@@ -191,10 +192,9 @@ static int find(const struct find_args *args, const struct dir_chain *this) {
 		return 0;
 	}
 
-	// TODO glob
 	if(
 		// name does not match
-		(args->search_name && strcmp(this->name, args->search_name) != 0)
+		(args->search_name && fnmatch(args->search_name, this->name, 0) != 0)
 		// type does not match
 		|| (args->mode != (mode_t)-1 && (st.st_mode & S_IFMT) != args->mode)
 	) {
