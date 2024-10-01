@@ -23,4 +23,3 @@ echo ./a/h
 
 # dangling symlink
 ln -s i j
-echo "/test/find: cannot stat ./j: No such file or directory"

@@ -234,8 +234,15 @@ static int find(struct find_args *args, struct dir_chain *this) {
 	// Avoids some file system race conditions, but mainly lets us avoid string
 	// manipulation.
 	if(fstatat(this->dir_fd, this->name, &args->st, args->stat_flags) < 0) {
-		find_error(args->err, args->err_prefix, "stat", this);
-		return -1;
+		// Redo stat(2) if the issue may have been a dangling symlink.
+		if(
+			errno != ENOENT
+			|| (args->stat_flags & AT_SYMLINK_NOFOLLOW)
+			|| fstatat(this->dir_fd, this->name, &args->st, args->stat_flags | AT_SYMLINK_NOFOLLOW) < 0
+		) {
+			find_error(args->err, args->err_prefix, "stat", this);
+			return -1;
+		}
 	}
 
 	// detect file system loop
