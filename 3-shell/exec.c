@@ -14,6 +14,16 @@
 #include "backup-errno.h"
 #include "exec.h"
 
+#ifdef TRACE_TCSETPGRP
+static int echo_tcsetpgrp(int fd, pid_t pgrp) {
+	int ret = tcsetpgrp(fd, pgrp);
+	BACKUP_ERRNO();
+	fprintf(stderr, "tcsetpgrp(%d, %ld) = %d\n", fd, (long)pgrp, ret);
+	return ret;
+}
+#define tcsetpgrp echo_tcsetpgrp
+#endif
+
 #ifdef TRACE_FILE_DESCRIPTORS
  #include <dirent.h>
  #include <sys/file.h>
@@ -157,6 +167,7 @@ enum error_cause {
 	ERROR_OPEN,
 	ERROR_SETPGID,
 	ERROR_PIPE,
+	ERROR_TCSETPGRP,
 	ERROR_WAIT,
 };
 struct error_packet {
@@ -335,25 +346,44 @@ static void print_command(argument_list cmd, struct file_descriptors fds, int pi
 }
 
 /**
- *   1. create a new process group for background processes
+ *   1. create a new process group
  *   2. open initial stdin/final stdout
  *   3. create required pioes
  *   4. start commands with their pipes
  **/
 static int run_piped_commands(const struct pipeline *p, int error_fd, int verbose) {
-	// TODO do not ignore SIGINT
+	// TODO signal handling
 
-	// Background jobs/pipelines are in a different process group than the
-	// process controlling the terminal, see https://en.wikipedia.org/wiki/Background_process
-	// All but the the process group of the process controlling the terminal
-	// will receive SIGTTIN when attempting to read from the terminal.
-	// (The session ID belongs to the terminal, not the shell (see credentials(7))
-	// so we don't need setsid(2).)
-	if(p->background) {
-		// create a new process group for background pipelines
-		if(setpgid(getpid(), 0) < 0) {
-			write_error_pipe_no_errno(error_fd, errno, ERROR_SETPGID);
-			return -1;
+	// The following hierarchy exists:
+	// session > controlling termjnal > process group
+	//
+	// All processes sharing the same controlling terminal are also part of
+	// the same session. Since we want to keep the controlling terminal
+	// (if any) we do not change the session ID (with setsid(2)).
+	//
+	// A controlling terminal has exactly one foreground process group and
+	// any number of background process groups. If a background process group
+	// tries to read from the controlling terminal it receices SIGTTIN. The
+	// foreground process group is set with `tcsetgrp(3)`. `SIGINT` caused
+	// by Ctrl+C on the terminal is only sent to the foreground process group.
+	//
+	// Initially the shell's process group is the controlling terminal's
+	// foreground process group. Once a pipeline is started, its process group
+	// is set to be in the foreground, unless the pipeline is to be run in
+	// the background. Once the pipeline is finished the shell will become
+	// foreground again.
+	//
+	// see credentials(7), setsid(2)
+	if(setpgid(getpid(), 0) < 0) {
+		write_error_pipe_no_errno(error_fd, errno, ERROR_SETPGID);
+		return EXIT_FAILURE;
+	}
+	if(!p->background) {
+		// set current pipeline's process group to foreground
+		// TODO STDIN_FILENO vs STDERR_FILENO, bash seems to use STDERR_FILENO
+		if(tcsetpgrp(STDIN_FILENO, getpid()) < 0 && errno != ENOTTY) {
+			write_error_pipe_no_errno(error_fd, errno, ERROR_TCSETPGRP);
+			return EXIT_FAILURE;
 		}
 	}
 
@@ -492,6 +522,13 @@ int run_pipeline(const struct pipeline *p, int verbose) {
 		}
 
 		// TODO waitpid
+
+		// set the shells process group to foreground
+		// TODO STDIN_FILENO vs STDERR_FILENO, bash seems to use STDERR_FILENO
+		if(tcsetpgrp(STDIN_FILENO, getpid()) < 0 && errno != ENOTTY) {
+			return -1;
+		}
+
 		return 0;
 	}
 }

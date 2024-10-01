@@ -2,6 +2,7 @@
  #define _XOPEN_SOURCE
 #endif
 #include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -98,6 +99,16 @@ int main(int argc, char **argv) {
 		return 2;
 	}
 
+	// SIGTTOU is send when a process not belonging to the foreground process
+	// group tries to write to the TTY. We don't care.
+	const struct sigaction sigact = {
+		.sa_handler = SIG_IGN,
+	};
+	if(sigaction(SIGTTOU, &sigact, NULL) < 0) {
+		fprintf(stderr, "%s: cannot ignore SIGTTOU: %s\n", argv[0], strerror(errno));
+		return 1;
+	}
+
 	char *prompt = NULL;
 	int last_error = 1;
 
@@ -109,6 +120,12 @@ int main(int argc, char **argv) {
 				return EXIT_FAILURE;
 			}
 		}
+#ifdef TRACE_TCSETPGRP
+ #define ECHO_LONG(x) fprintf(stderr, "%s = %ld\n", #x, (long)x)
+		ECHO_LONG(tcgetpgrp(STDOUT_FILENO));
+		ECHO_LONG(getpgid(0));
+ #undef ECHO_LONG
+#endif
 		char *line = readline(prompt);
 		if(!line) {
 			break;
