@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L  // fdopendir, fstatat
+#define _GNU_SOURCE  // strndupa
 #include <assert.h>
 #include <dirent.h>
 #include <errno.h>
@@ -100,6 +101,32 @@ static int parse_args(struct cmd_args *args, int argc, char **argv) {
 	}
 
 	return argc;
+}
+
+int fnmatch_slash(const char *pattern, const char *string, int flags) {
+	int ret = fnmatch(pattern, string, flags);
+	if(ret != 0) {
+		const char *end = string + strlen(string);
+		// Remove all trailing slashes, except string[0].
+		while(end > string + 1 && end[-1] == '/') {
+			--end;
+		}
+		// Skip until last non-trailing slash.
+		const char *start = memrchr(string, '/', end - string);
+		if(start) {
+			if(start < end - 1) {
+				++start;
+			}
+		} else {
+			start = string;
+		}
+		if(start > string || *end == '/') {
+			// Copy substring on the stack and match again.
+			string = strndupa(start, end - start);
+			ret = fnmatch(pattern, string, flags);
+		}
+	}
+	return ret;
 }
 
 /**
@@ -234,7 +261,7 @@ static int find(struct find_args *args, struct dir_chain *this) {
 
 	if(
 		// name does not match
-		(args->search_name && fnmatch(args->search_name, this->name, 0) != 0)
+		(args->search_name && fnmatch_slash(args->search_name, this->name, 0) != 0)
 		// type does not match
 		|| (args->mode != (mode_t)-1 && (args->st.st_mode & S_IFMT) != args->mode)
 	) {

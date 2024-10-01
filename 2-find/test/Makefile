@@ -5,6 +5,7 @@ tests = \
 	test-absolute-name \
 	test-loop \
 	test-noaccess \
+	test-special-name \
 	test-type-d \
 	test-type-d-follow \
 	test-type-f \
