@@ -480,11 +480,39 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 
 	// If the commands are to be run in the background we can just exit our
 	// pipeline's subprocess after all its commands where started.
-	if(!p->background) {
-		// TODO wait
+	if(p->background) {
+		return EXIT_SUCCESS;
 	}
 
-	return EXIT_SUCCESS;
+	int exit_status = EXIT_SUCCESS;
+
+	// `waitpid(0, ...)` waits for any child process in our process group.
+	// We could use `waitpid(-1, ...)` to also wait for child processes that
+	// changed their process group, but they might have created their own
+	// session and so on, so we do not wait for them anymore.
+	// see https://man7.org/linux/man-pages/man2/wait.2.html#DESCRIPTION
+	while(1) {
+		int status;
+		if(waitpid(0, &status, 0) < 0) {
+			if(errno == ECHILD) {
+				// no more child processes running
+				break;
+			} else if(errno == EINTR) {
+				// interrupted by a signal handler, just retry
+				continue;
+			} else {
+				// should not be returned by waitpid, but better safe than sorry
+				write_error_pipe_no_errno(error_fd, errno, ERROR_WAIT);
+				return EXIT_FAILURE;
+			}
+		}
+		if(exit_status == 0 && (WIFEXITED(status) || WIFSIGNALED(status))) {
+			// collect the first non-zero exit status
+			exit_status = WEXITSTATUS(status);
+		}
+	}
+
+	return exit_status;
 }
 
 /**
@@ -521,7 +549,18 @@ int run_pipeline(const struct pipeline *p, int verbose) {
 			}
 		}
 
-		// TODO waitpid
+		// We cannot use BACKUP_ERRNO() because we might want to return our
+		// errno.
+		int errno_backup = errno;
+
+		int status;
+		do {
+			if(waitpid(pgrp, &status, 0) < 0) {
+				kill(pgrp, SIGKILL);
+				errno = errno_backup;
+				return -1;
+			}
+		} while(!WIFEXITED(status) && !WIFSIGNALED(status));
 
 		// set the shells process group to foreground
 		// TODO STDIN_FILENO vs STDERR_FILENO, bash seems to use STDERR_FILENO
@@ -529,6 +568,6 @@ int run_pipeline(const struct pipeline *p, int verbose) {
 			return -1;
 		}
 
-		return 0;
+		return WEXITSTATUS(status);
 	}
 }
