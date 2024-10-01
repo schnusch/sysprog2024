@@ -11,6 +11,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+// name ist stolen from busybox
+#define DOT_OR_DOTDOT(x) ((x)[0] == '.' && ((x)[1] == '\0' || ((x)[1] == '.' && (x)[2] == '\0')))
+
 struct cmd_args {
 	const char *name;
 	mode_t mode;
@@ -346,16 +349,7 @@ static int find(struct find_args *args, struct dir_chain *this) {
 	int ret = 0;
 	for(struct dirent *e; (e = readdir(d));) {
 		// ignore "." and ".."
-		if(
-			e->d_name[0] == '.'
-			&& (
-				e->d_name[1] == '\0'
-				|| (
-					e->d_name[1] == '.'
-					&& e->d_name[2] == '\0'
-				)
-			)
-		) {
+		if(DOT_OR_DOTDOT(e->d_name)) {
 			continue;
 		}
 		child.name = e->d_name;
