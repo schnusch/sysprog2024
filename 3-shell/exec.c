@@ -363,7 +363,7 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 		current_stdin = open(p->stdin, O_RDONLY);
 		if(current_stdin < 0) {
 			write_error_pipe_no_errno(error_fd, errno, ERROR_OPEN);
-			return -1;
+			return EXIT_FAILURE;
 		}
 	}
 
@@ -373,7 +373,7 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 		final_stdout = open(p->stdout, O_CREAT | O_WRONLY | O_TRUNC, 0666);
 		if(final_stdout < 0) {
 			write_error_pipe_no_errno(error_fd, errno, ERROR_OPEN);
-			return -1;
+			return EXIT_FAILURE;
 		}
 	}
 
@@ -384,7 +384,7 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 			// from this command to the next.
 			if(pipe(fds) < 0) {
 				write_error_pipe_no_errno(error_fd, errno, ERROR_PIPE);
-				return -1;
+				return EXIT_FAILURE;
 			}
 		}
 
@@ -408,7 +408,7 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 			BACKUP_ERRNO();
 			(void)!closep_no_std(&fds[0]);
 			(void)!closep_no_std(&fds[1]);
-			return -1;
+			return EXIT_FAILURE;
 		}
 
 		if(verbose) {
@@ -426,7 +426,7 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 			(void)!closep_no_std(&fds[0]);
 			(void)!closep_no_std(&fds[1]);
 			kill_child_no_errno(child);
-			return -1;
+			return EXIT_FAILURE;
 		}
 
 		// Another file-descriptor to the read end won't mess with EOF, so we
@@ -438,7 +438,7 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 	// close error_fd, starting processes was successful
 	if(close(error_fd) < 0) {
 		write_error_pipe_no_errno(error_fd, errno, ERROR_CLOSE);
-		return -1;
+		return EXIT_FAILURE;
 	}
 
 #ifdef TRACE_FILE_DESCRIPTORS
@@ -454,7 +454,7 @@ static int run_piped_commands(const struct pipeline *p, int error_fd, int verbos
 		// TODO wait
 	}
 
-	return 0;
+	return EXIT_SUCCESS;
 }
 
 /**
@@ -467,11 +467,7 @@ int run_pipeline(const struct pipeline *p, int verbose) {
 		return -1;
 	} else if(pgrp == 0) {
 		// child process
-		_exit(
-			run_piped_commands(p, error_fds[1], verbose) < 0
-			? EXIT_FAILURE
-			: EXIT_SUCCESS
-		);
+		_exit(run_piped_commands(p, error_fds[1], verbose));
 	} else {
 		// parent process
 		struct error_packet e;
