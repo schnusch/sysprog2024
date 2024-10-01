@@ -6,6 +6,9 @@ tests = \
 	test-loop \
 	test-noaccess \
 	test-special-name \
+	test-testbed \
+	test-testbed-follow \
+	test-testbed-xdev \
 	test-type-d \
 	test-type-d-follow \
 	test-type-f \
