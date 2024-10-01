@@ -6,3 +6,6 @@ RUN apt-get update \
 
 RUN echo '%sudo ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers
 RUN useradd --gid users --groups sudo --no-create-home user
+
+COPY entrypoint.sh /
+ENTRYPOINT ["/entrypoint.sh"]

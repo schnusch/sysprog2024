@@ -26,11 +26,11 @@ test: image-id
 		--tmpfs /test/test/test-xdev.d/a/b \
 		--user user \
 		"$$(cat image-id)" \
-		sh -ec 'PS4="\$$ "; set -x; sudo chown -R user:users /test || true; cp -a /host/* /test && make -C /test clean all && make -C /test/test in-docker'
+		make -C /test/test in-docker
 
 in-docker: $(tests)
 
-image-id: Dockerfile
+image-id: Dockerfile entrypoint.sh
 	$(DOCKER) build --iidfile=.tmp.$@ -f Dockerfile .
 	if ! cmp -s .tmp.$@ $@; then mv .tmp.$@ $@; fi
 
