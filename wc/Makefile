@@ -13,3 +13,5 @@ $(BINARY): $(OBJ)
 
 clean:
 	$(RM) $(OBJ) $(BINARY)
+
+$(BINARY).o: exit.h read-write.h

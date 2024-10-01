@@ -1,37 +1,5 @@
-#include <sys/syscall.h>
-
-long read(int fd, char *buffer, long size) {
-	long v = SYS_read;
-	asm volatile(
-		"int $0x80"
-		: "+a"(v)
-		: "b"(fd), "c"(buffer), "d"(size)
-	);
-	return v;
-}
-
-long write(int fd, const char *buffer, long size) {
-	long v = SYS_write;
-	asm volatile(
-		"int $0x80"
-		: "+a"(v)
-		: "b"(fd), "c"(buffer), "d"(size)
-	);
-	return v;
-}
-
-void exit(int code) {
-	long v = SYS_exit;
-	asm volatile(
-		"int $0x80"
-		: // nothing
-		: "a"(v), "b"(code)
-	);
-	__builtin_unreachable();
-}
-
-static const int STDIN_FILENO = 0;
-static const int STDOUT_FILENO = 1;
+#include "exit.h"
+#include "read-write.h"
 
 int main(void) {
 	char buffer[1024];
