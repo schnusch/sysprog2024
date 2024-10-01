@@ -21,6 +21,7 @@ tests = \
 
 test: image-id
 	$(DOCKER) run \
+		-e TERM \
 		-v ..:/host:ro \
 		-v ./loop:/loop:ro \
 		-v ./loop:/loop/loop:ro \
@@ -39,6 +40,7 @@ image-id: Dockerfile entrypoint.sh find_testbed/create_testbed.sh find_testbed/x
 	if ! cmp -s .tmp.$@ $@; then mv .tmp.$@ $@; fi
 
 test-%:
+	-@{ tput bold setaf 3; echo TEST $@; tput sgr0; } >&2 2> /dev/null
 	mkdir -p $@.d
 	(cd $@.d && ../$@-prepare.sh) | sort > $@-expect.txt
 	(cd $@.d && stdbuf -o0 ../$@-run.sh 2>&1) | sort | diff -u $@-expect.txt -
