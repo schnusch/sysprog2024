@@ -16,6 +16,7 @@ tests = \
 	test-xdev
 
 .PHONY: \
+	clean \
 	test \
 	in-docker
 
@@ -33,11 +34,15 @@ test: image-id
 		"$$(cat image-id)" \
 		make -C /test/test in-docker
 
+clean:
+	$(RM) image-id .tmp.image-id
+
 in-docker: $(tests)
 
 image-id: Dockerfile entrypoint.sh find_testbed/create_testbed.sh find_testbed/xdev.tar.zstd
 	$(DOCKER) build --iidfile=.tmp.$@ -f Dockerfile .
 	if ! cmp -s .tmp.$@ $@; then mv .tmp.$@ $@; fi
+	$(RM) .tmp.$@
 
 test-%:
 	-@{ tput bold setaf 3; echo TEST $@; tput sgr0; } >&2 2> /dev/null

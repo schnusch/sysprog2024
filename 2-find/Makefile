@@ -15,6 +15,7 @@ check: find
 
 clean:
 	$(RM) find
+	$(MAKE) -C test $@
 
 find: $(source_files)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $(source_files) $(LDFLAGS)
